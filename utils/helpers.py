@@ -18,7 +18,11 @@ async def check_admin_status(client: Client, chat_id: int, user_id: int = None):
             me = await client.get_me()
             member = await client.get_chat_member(chat_id, me.id)
         
-        if member.status in ["administrator", "creator"]:
+        # Handle both string and Enum status
+        status = member.status
+        status_str = status.value if hasattr(status, 'value') else str(status)
+        
+        if status_str.lower() in ["administrator", "owner", "creator"]:
             return True, None
         else:
             return False, "Bot/User is not admin in this chat!"
