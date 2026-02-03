@@ -219,20 +219,6 @@ async def forwarded_handler(client: Client, message: Message):
     await handle_forwarded_message(client, message)
 
 
-# ==================== Chat Shared Handler (Request Peer) ====================
-
-@app.on_message(filters.private & filters.chat_shared)
-async def chat_shared_handler(client: Client, message: Message):
-    """Handle when user selects a chat via request_peer"""
-    await handle_peer_selected(client, message)
-
-
-@app.on_message(filters.private & filters.regex(r"^❌ Cancel$"))
-async def cancel_handler(client: Client, message: Message):
-    """Handle cancel button from reply keyboard"""
-    from pyrogram.types import ReplyKeyboardRemove
-    await message.reply_text("❌ Cancelled!", reply_markup=ReplyKeyboardRemove())
-
 
 # ==================== Group/Channel Message Handler ====================
 
