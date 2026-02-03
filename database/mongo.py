@@ -11,9 +11,9 @@ class Database:
     def __init__(self):
         self.client = AsyncIOMotorClient(MONGO_URI)
         self.db = self.client[DB_NAME]
-        self.users = self.db["users"]
-        self.connections = self.db["connections"]
-        self.sessions = self.db["sessions"]
+        self.users = self.db["fwd_users"]
+        self.connections = self.db["fwd_connections"]
+        self.sessions = self.db["fwd_sessions"]
 
     # ==================== User Operations ====================
     
