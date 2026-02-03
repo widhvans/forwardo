@@ -106,7 +106,7 @@ async def myconnections_handler(client: Client, message: Message):
             InlineKeyboardButton("🗑 Remove Source", callback_data="remove_source"),
             InlineKeyboardButton("🗑 Remove Target", callback_data="remove_target")
         ],
-        [InlineKeyboardButton("🔙 Main Menu", callback_data="start_menu")]
+        [InlineKeyboardButton("Main Menu", callback_data="start_menu")]
     ])
     
     await message.reply_text(text, reply_markup=keyboard)
@@ -150,7 +150,7 @@ async def mode_handler(client: Client, message: Message):
             InlineKeyboardButton("1️⃣ Intent Forward", callback_data="mode_intent"),
             InlineKeyboardButton("2️⃣ Forward All", callback_data="mode_forward_all")
         ],
-        [InlineKeyboardButton("🔙 Main Menu", callback_data="start_menu")]
+        [InlineKeyboardButton("Main Menu", callback_data="start_menu")]
     ])
     
     await message.reply_text(text, reply_markup=keyboard)
@@ -193,11 +193,11 @@ async def status_handler(client: Client, message: Message):
     
     buttons = []
     if session and session.get("active"):
-        buttons.append([InlineKeyboardButton("⏹ Stop", callback_data="stop_forwarding")])
+        buttons.append([InlineKeyboardButton("Stop", callback_data="stop_forwarding")])
     else:
-        buttons.append([InlineKeyboardButton("▶️ Start", callback_data="select_mode")])
+        buttons.append([InlineKeyboardButton("Start", callback_data="select_mode")])
     
-    buttons.append([InlineKeyboardButton("🔙 Main Menu", callback_data="start_menu")])
+    buttons.append([InlineKeyboardButton("Main Menu", callback_data="start_menu")])
     
     await message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
@@ -232,7 +232,8 @@ async def forwarded_handler(client: Client, message: Message):
     
     # Check if waiting for last msg input
     if user_id in user_states:
-        if user_states[user_id].get("action") == "wait_for_last_msg":
+        action = user_states[user_id].get("action")
+        if action == "wait_for_last_msg" or action == "wait_for_last_msg_hub":
              from handlers.forward import handle_last_msg_input
              await handle_last_msg_input(client, message)
              return

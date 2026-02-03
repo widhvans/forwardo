@@ -62,7 +62,7 @@ Select a mode to configure your session:
             InlineKeyboardButton("1️⃣ Instant Forward", callback_data="setup_hub_instant"),
             InlineKeyboardButton("2️⃣ Forward Old", callback_data="setup_hub_old")
         ],
-        [InlineKeyboardButton("🔙 Broad Menu", callback_data="start_menu")]
+        [InlineKeyboardButton("Back", callback_data="start_menu")]
     ])
     
     await callback_query.message.edit_text(text, reply_markup=keyboard)
@@ -125,15 +125,13 @@ Configure settings:
     ]
 
     if session["mode"] == "forward_old":
-        key_rows.append([InlineKeyboardButton("🏁 Set Start Message", callback_data="set_start_msg_hub")])
+        key_rows.append([InlineKeyboardButton("Set Start Message", callback_data="set_start_msg_hub")])
     
     if can_start:
-        key_rows.append([InlineKeyboardButton("▶️ START FORWARDING", callback_data="start_session")])
-    else:
-        if session["mode"] == "forward_old":
-             key_rows.append([InlineKeyboardButton("⚠️ Set Start Msg First", callback_data="noop")])
+        key_rows.append([InlineKeyboardButton("Start Forwarding", callback_data="start_session")])
+    # Warning button removed
 
-    key_rows.append([InlineKeyboardButton("🔙 Back to Modes", callback_data="select_mode")])
+    key_rows.append([InlineKeyboardButton("Back", callback_data="select_mode")])
     
     # Helper to avoid "message not modified" error
     try:
@@ -159,7 +157,7 @@ Bot will start copying backwards from this message.
 """
     await callback_query.message.edit_text(
         text,
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="setup_hub")]])
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Cancel", callback_data="setup_hub")]])
     )
 
 
@@ -285,7 +283,7 @@ async def menu_filters_callback(client: Client, callback_query: CallbackQuery):
             InlineKeyboardButton(f"{status('document')} Docs", callback_data="toggle_filter_document")
         ],
         [InlineKeyboardButton(f"{status('voice')} Audio", callback_data="toggle_filter_voice")],
-        [InlineKeyboardButton("🔙 Back to Hub", callback_data="setup_hub")]
+        [InlineKeyboardButton("Back to Hub", callback_data="setup_hub")]
     ])
     await callback_query.message.edit_text("🛡 **Edit Filters**", reply_markup=keyboard)
 
@@ -333,7 +331,7 @@ async def menu_chat_selection(client: Client, callback_query: CallbackQuery, is_
         # toggle_chat_source_12345
         buttons.append([InlineKeyboardButton(f"{mark} {chat['chat_title']}", callback_data=f"toggle_chat_{chat_type}_{chat_id}")])
     
-    buttons.append([InlineKeyboardButton("🔙 Back to Hub", callback_data="setup_hub")])
+    buttons.append([InlineKeyboardButton("Back to Hub", callback_data="setup_hub")])
     await callback_query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
 
@@ -393,7 +391,7 @@ async def start_session_callback(client: Client, callback_query: CallbackQuery):
 """
     await callback_query.message.edit_text(
         display_text, 
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⏹ Stop", callback_data="stop_forwarding")]])
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Stop", callback_data="stop_forwarding")]])
     )
     
     if session["mode"] == "forward_old" and s_msg_id:

@@ -39,7 +39,7 @@ Group को connect करने के लिए:
             InlineKeyboardButton("📤 As Source", callback_data="connect_source_group"),
             InlineKeyboardButton("📥 As Target", callback_data="connect_target_group")
         ],
-        [InlineKeyboardButton("🔙 Back", callback_data="start_menu")]
+        [InlineKeyboardButton("Back", callback_data="start_menu")]
     ])
     
     await callback_query.message.edit_text(text, reply_markup=keyboard)
@@ -72,7 +72,7 @@ Channel को connect करने के लिए:
             InlineKeyboardButton("📤 As Source", callback_data="connect_source_channel"),
             InlineKeyboardButton("📥 As Target", callback_data="connect_target_channel")
         ],
-        [InlineKeyboardButton("🔙 Back", callback_data="start_menu")]
+        [InlineKeyboardButton("Back", callback_data="start_menu")]
     ])
     
     await callback_query.message.edit_text(text, reply_markup=keyboard)
@@ -103,7 +103,7 @@ async def connect_source_callback(client: Client, callback_query: CallbackQuery)
 """
     
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("❌ Cancel", callback_data="cancel_connect")]
+        [InlineKeyboardButton("Cancel", callback_data="cancel_connect")]
     ])
     
     await callback_query.message.edit_text(text, reply_markup=keyboard)
@@ -134,7 +134,7 @@ async def connect_target_callback(client: Client, callback_query: CallbackQuery)
 """
     
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("❌ Cancel", callback_data="cancel_connect")]
+        [InlineKeyboardButton("Cancel", callback_data="cancel_connect")]
     ])
     
     await callback_query.message.edit_text(text, reply_markup=keyboard)
@@ -205,7 +205,7 @@ async def handle_forwarded_message(client: Client, message: Message):
             f"🆔 Chat ID: `{chat_id}`\n"
             f"📌 Type: {connection_type.title()}",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔙 Main Menu", callback_data="start_menu")]
+                [InlineKeyboardButton("Main Menu", callback_data="start_menu")]
             ])
         )
     else:
@@ -234,7 +234,7 @@ async def my_connections_callback(client: Client, callback_query: CallbackQuery)
             InlineKeyboardButton("🗑 Remove Source", callback_data="remove_source"),
             InlineKeyboardButton("🗑 Remove Target", callback_data="remove_target")
         ],
-        [InlineKeyboardButton("🔙 Back", callback_data="start_menu")]
+        [InlineKeyboardButton("Back", callback_data="start_menu")]
     ])
     
     await callback_query.message.edit_text(text, reply_markup=keyboard)
