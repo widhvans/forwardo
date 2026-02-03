@@ -166,47 +166,67 @@ async def handle_chat_shared(client: Client, message: Message):
     
     user_id = message.from_user.id
     
-    # Get shared chat info
-    if message.chat_shared:
-        chat_id = message.chat_shared.chat_id
-        
-        # Get chat details
-        try:
-            chat = await client.get_chat(chat_id)
-            chat_title = chat.title or "Unknown"
-        except Exception as e:
-            await message.reply_text(
-                f"❌ Chat info नहीं मिली: {e}",
-                reply_markup=ReplyKeyboardRemove()
-            )
-            return
-        
-        # Check if bot is admin
-        is_admin, error = await check_admin_status(client, chat_id)
-        if not is_admin:
-            await message.reply_text(
-                f"❌ {error}\n\nBot को पहले **{chat_title}** में admin बनाएं!",
-                reply_markup=ReplyKeyboardRemove()
-            )
-            return
-        
-        # Ask source or target
+    # Get shared chat info - pyrotgfork uses 'chats' list
+    chat_shared = message.chat_shared
+    if not chat_shared:
+        return
+    
+    # Try different attribute names based on pyrotgfork version
+    chat_id = None
+    if hasattr(chat_shared, 'chats') and chat_shared.chats:
+        # Newer versions use chats list
+        chat_id = chat_shared.chats[0].id if chat_shared.chats else None
+    elif hasattr(chat_shared, 'chat_id'):
+        chat_id = chat_shared.chat_id
+    elif hasattr(chat_shared, 'id'):
+        chat_id = chat_shared.id
+    
+    if not chat_id:
+        # Debug: print available attributes
+        attrs = [attr for attr in dir(chat_shared) if not attr.startswith('_')]
         await message.reply_text(
-            f"✅ **Chat Selected!**\n\n"
-            f"**{chat_title}**\n"
-            f"🆔 `{chat_id}`\n\n"
-            f"इसे किस तरह connect करना है?",
-            reply_markup=InlineKeyboardMarkup([
-                [
-                    InlineKeyboardButton("📤 As Source", callback_data=f"add_source_{chat_id}"),
-                    InlineKeyboardButton("📥 As Target", callback_data=f"add_target_{chat_id}")
-                ],
-                [InlineKeyboardButton("❌ Cancel", callback_data="start_menu")]
-            ])
+            f"❌ Chat ID नहीं मिली!\n\nAvailable attrs: {attrs}",
+            reply_markup=ReplyKeyboardRemove()
         )
-        
-        # Remove reply keyboard
-        await message.reply_text("⬆️", reply_markup=ReplyKeyboardRemove())
+        return
+    
+    # Get chat details
+    try:
+        chat = await client.get_chat(chat_id)
+        chat_title = chat.title or "Unknown"
+    except Exception as e:
+        await message.reply_text(
+            f"❌ Chat info नहीं मिली: {e}",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return
+    
+    # Check if bot is admin
+    is_admin, error = await check_admin_status(client, chat_id)
+    if not is_admin:
+        await message.reply_text(
+            f"❌ {error}\n\nBot को पहले **{chat_title}** में admin बनाएं!",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return
+    
+    # Ask source or target
+    await message.reply_text(
+        f"✅ **Chat Selected!**\n\n"
+        f"**{chat_title}**\n"
+        f"🆔 `{chat_id}`\n\n"
+        f"इसे किस तरह connect करना है?",
+        reply_markup=InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("📤 As Source", callback_data=f"add_source_{chat_id}"),
+                InlineKeyboardButton("📥 As Target", callback_data=f"add_target_{chat_id}")
+            ],
+            [InlineKeyboardButton("❌ Cancel", callback_data="start_menu")]
+        ])
+    )
+    
+    # Remove reply keyboard
+    await message.reply_text("⬆️", reply_markup=ReplyKeyboardRemove())
 
 
 async def handle_tile_button(client: Client, message: Message):
