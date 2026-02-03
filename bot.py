@@ -36,11 +36,12 @@ from handlers.connect import (
 )
 from utils.logger import logger
 from handlers.forward import (
-    select_mode_callback, setup_filter_callback, 
-    toggle_filter_callback, confirm_filters_callback,
-    stop_forwarding_callback, 
+    select_mode_callback, setup_hub_callback, active_sessions,
+    menu_filters_callback, toggle_filter_callback,
+    menu_chat_selection, toggle_chat_callback,
+    start_session_callback, stop_forwarding_callback, 
     status_callback, forward_message_handler, 
-    load_sessions_on_startup, stop_command, active_sessions,
+    load_sessions_on_startup, stop_command,
     handle_last_msg_input
 )
 from handlers.admin import stats_command, broadcast_command, users_command
@@ -315,13 +316,26 @@ async def callback_handler(client: Client, callback_query: CallbackQuery):
     elif data == "select_mode":
         await select_mode_callback(client, callback_query)
         
-    # Filter Handlers
-    elif data.startswith("setup_filter_"):
-        await setup_filter_callback(client, callback_query)
-    elif data.startswith("toggle_"):
+    # Wizard/Hub Handlers
+    elif data.startswith("setup_hub_") or data == "setup_hub":
+        await setup_hub_callback(client, callback_query)
+        
+    elif data.startswith("menu_"): # menu_filters, menu_sources, menu_targets
+        if "filters" in data:
+            await menu_filters_callback(client, callback_query)
+        elif "sources" in data:
+             await menu_chat_selection(client, callback_query, is_source=True)
+        elif "targets" in data:
+             await menu_chat_selection(client, callback_query, is_source=False)
+             
+    elif data.startswith("toggle_filter_"):
         await toggle_filter_callback(client, callback_query)
-    elif data == "confirm_filters":
-        await confirm_filters_callback(client, callback_query)
+        
+    elif data.startswith("toggle_chat_"):
+        await toggle_chat_callback(client, callback_query)
+
+    elif data == "start_session":
+        await start_session_callback(client, callback_query)
 
     elif data == "stop_forwarding":
         await stop_forwarding_callback(client, callback_query)
