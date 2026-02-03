@@ -38,12 +38,9 @@ async def select_mode_callback(client: Client, callback_query: CallbackQuery):
         }
     }
     
-    # Pre-select all connected chats by default
-    sources = await db.get_user_connections(user_id, "source")
-    targets = await db.get_user_connections(user_id, "target")
-    
-    temp_sessions[user_id]["sources"] = [s["chat_id"] for s in sources]
-    temp_sessions[user_id]["targets"] = [t["chat_id"] for t in targets]
+    # Start with empty selection so user can choose explicitly
+    temp_sessions[user_id]["sources"] = []
+    temp_sessions[user_id]["targets"] = []
 
     text = """
 ⚙️ **Select Forwarding Mode**

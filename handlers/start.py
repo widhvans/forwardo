@@ -7,7 +7,7 @@ from pyrogram import Client, filters
 from pyrogram.types import (
     Message, InlineKeyboardMarkup, InlineKeyboardButton,
     ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove,
-    KeyboardButtonRequestChat  # This is the correct import
+    KeyboardButtonRequestChat, LinkPreviewOptions  # This is the correct import
 )
 from database.mongo import db
 from config import BOT_USERNAME
@@ -72,7 +72,7 @@ async def start_command(client: Client, message: Message):
     await message.reply_text(
         WELCOME_TEXT,
         reply_markup=keyboard,
-        disable_web_page_preview=True
+        link_preview_options=LinkPreviewOptions(is_disabled=True)
     )
 
 
@@ -106,7 +106,7 @@ async def start_callback(client: Client, callback_query):
             InlineKeyboardButton("📋 My Connections", callback_data="my_connections")
         ]
         ]),
-        disable_web_page_preview=True
+        link_preview_options=LinkPreviewOptions(is_disabled=True)
     )
     await callback_query.answer()
 
