@@ -194,9 +194,9 @@ async def status_handler(client: Client, message: Message):
     
     buttons = []
     if session and session.get("active"):
-        buttons.append([InlineKeyboardButton("Stop", callback_data="stop_forwarding")])
+        buttons.append([InlineKeyboardButton("⏹ Stop Forwarding", callback_data="stop_forwarding")])
     else:
-        buttons.append([InlineKeyboardButton("Start", callback_data="select_mode")])
+        buttons.append([InlineKeyboardButton("▶️ Start Forwarding", callback_data="select_mode")])
     
     buttons.append([InlineKeyboardButton("Main Menu", callback_data="start_menu")])
     

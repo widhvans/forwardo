@@ -27,21 +27,19 @@ async def select_mode_callback(client: Client, callback_query: CallbackQuery):
     """Step 1: Show Mode Selection"""
     user_id = callback_query.from_user.id
     
-    # Initialize temp session
-    temp_sessions[user_id] = {
-        "mode": None,
-        "sources": [],
-        "targets": [], 
-        "filters": {
-            "text": True, "photo": True, "video": True, 
-            "document": True, "voice": True
+    # Initialize temp session ONLY if not exists (Preserve state on Back navigation)
+    if user_id not in temp_sessions:
+        temp_sessions[user_id] = {
+            "mode": None,
+            "sources": [],
+            "targets": [], 
+            "filters": {
+                "text": True, "photo": True, "video": True, 
+                "document": True, "voice": True
+            }
         }
-    }
+        # Start with empty selection (User explicitly adds)
     
-    # Start with empty selection so user can choose explicitly
-    temp_sessions[user_id]["sources"] = []
-    temp_sessions[user_id]["targets"] = []
-
     text = """
 ⚙️ **Select Forwarding Mode**
 
@@ -63,6 +61,56 @@ Select a mode to configure your session:
     ])
     
     await callback_query.message.edit_text(text, reply_markup=keyboard)
+
+
+# ... (skipping unchanged functions) ...
+
+async def start_session_callback(client: Client, callback_query: CallbackQuery):
+    """Start the configured session"""
+    user_id = callback_query.from_user.id
+    if user_id not in temp_sessions: return
+    session = temp_sessions[user_id]
+    
+    if not session["sources"]:
+        await callback_query.answer("❌ Select at least one Source!", show_alert=True)
+        return
+    if not session["targets"]:
+        await callback_query.answer("❌ Select at least one Target!", show_alert=True)
+        return
+        
+    s_msg_id = session.get("start_msg_id")
+    
+    # Save to DB
+    await db.save_session(
+        user_id=user_id,
+        mode=session["mode"],
+        sources=session["sources"],
+        targets=session["targets"],
+        filters=session["filters"],
+        active=True
+    )
+    
+    active_sessions[user_id] = session.copy()
+    active_sessions[user_id]["active"] = True
+    del temp_sessions[user_id]
+    
+    display_text = f"""
+✅ **Forwarding Started!**
+
+**Mode:** {session['mode'].replace('_', ' ').title()}
+📤 Sources: {len(session['sources'])}
+📥 Targets: {len(session['targets'])}
+"""
+    await callback_query.message.edit_text(
+        display_text, 
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⏹ Stop Forwarding", callback_data="stop_forwarding")]])
+    )
+    
+    if session["mode"] == "forward_old" and s_msg_id:
+        task = asyncio.create_task(
+            forward_old_messages_loop(client, user_id, session["sources"], session["targets"], s_msg_id)
+        )
+        forward_tasks[user_id] = task
 
 
 async def setup_hub_callback(client: Client, callback_query: CallbackQuery):
@@ -128,7 +176,7 @@ Configure settings:
     key_rows.append([InlineKeyboardButton("🔄 Reset Selection", callback_data="reset_selection")])
     
     if can_start:
-        key_rows.append([InlineKeyboardButton("Start Forwarding", callback_data="start_session")])
+        key_rows.append([InlineKeyboardButton("▶️ Start Forwarding", callback_data="start_session")])
     # Warning button removed
 
     key_rows.append([InlineKeyboardButton("Back", callback_data="select_mode")])
