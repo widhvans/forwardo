@@ -228,6 +228,14 @@ async def forwarded_handler(client: Client, message: Message):
     await handle_forwarded_message(client, message)
 
 
+# ==================== Chat Shared Handler (Native Picker) ====================
+
+@app.on_message(filters.private & filters.chat_shared)
+async def chat_shared_handler(client: Client, message: Message):
+    """Handle chat_shared from native picker"""
+    await handle_chat_shared(client, message)
+
+
 
 # ==================== Group/Channel Message Handler ====================
 
