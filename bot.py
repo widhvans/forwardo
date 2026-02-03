@@ -34,13 +34,14 @@ from handlers.connect import (
     remove_target_callback, delete_connection_callback,
     connect_in_chat, quick_connect_callback, user_states
 )
+from utils.logger import logger
 from handlers.forward import (
-    select_mode_callback, mode_intent_callback,
-    mode_forward_all_callback, handle_keywords_input,
-    start_intent_callback, start_forward_all_callback,
-    stop_forwarding_callback, status_callback,
-    forward_message_handler, load_sessions_on_startup,
-    stop_command, active_sessions
+    select_mode_callback, mode_instant_callback,
+    mode_forward_old_callback, start_instant_all_callback,
+    start_forward_old_callback, stop_forwarding_callback, 
+    status_callback, forward_message_handler, 
+    load_sessions_on_startup, stop_command, active_sessions,
+    handle_keywords_input
 )
 from handlers.admin import stats_command, broadcast_command, users_command
 
@@ -303,14 +304,18 @@ async def callback_handler(client: Client, callback_query: CallbackQuery):
     # Mode handlers
     elif data == "select_mode":
         await select_mode_callback(client, callback_query)
-    elif data == "mode_intent":
-        await mode_intent_callback(client, callback_query)
-    elif data == "mode_forward_all":
-        await mode_forward_all_callback(client, callback_query)
-    elif data.startswith("start_intent_"):
-        await start_intent_callback(client, callback_query)
-    elif data == "start_forward_all":
-        await start_forward_all_callback(client, callback_query)
+    elif data == "mode_instant":
+        await mode_instant_callback(client, callback_query)
+    elif data == "mode_forward_old":
+        await mode_forward_old_callback(client, callback_query)
+        
+    # Start Handlers
+    elif data == "start_instant_all":
+        await start_instant_all_callback(client, callback_query)
+    elif data.startswith("start_final_instant_"): # If we need this pattern, but currently just start_instant_all or direct
+        pass 
+    elif data == "start_forward_old":
+        await start_forward_old_callback(client, callback_query)
     elif data == "stop_forwarding":
         await stop_forwarding_callback(client, callback_query)
     elif data == "status":
