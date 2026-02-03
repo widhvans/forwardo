@@ -125,7 +125,7 @@ async def connect_chat_callback(client: Client, callback_query):
                 KeyboardButton(
                     text="👥 Select Group",
                     request_chat=KeyboardButtonRequestChat(
-                        button_id=1,
+                        request_id=1,
                         chat_is_channel=False,
                         bot_is_member=True
                     )
@@ -133,7 +133,7 @@ async def connect_chat_callback(client: Client, callback_query):
                 KeyboardButton(
                     text="📢 Select Channel",
                     request_chat=KeyboardButtonRequestChat(
-                        button_id=2,
+                        request_id=2,
                         chat_is_channel=True,
                         bot_is_member=True
                     )
