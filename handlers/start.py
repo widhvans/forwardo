@@ -61,14 +61,12 @@ async def start_command(client: Client, message: Message):
             )
         ],
         [
-            InlineKeyboardButton("🔗 Connect Chat", callback_data="connect_chat")
+            InlineKeyboardButton("Auto Forward", callback_data="select_mode"),
+            InlineKeyboardButton("Connect Chat", callback_data="connect_chat")
         ],
         [
-            InlineKeyboardButton("⚙️ Select Mode", callback_data="select_mode")
-        ],
-        [
-            InlineKeyboardButton("📋 My Connections", callback_data="my_connections"),
-            InlineKeyboardButton("📊 Status", callback_data="status")
+            InlineKeyboardButton("My Connections", callback_data="my_connections"),
+            InlineKeyboardButton("Status", callback_data="status")
         ]
     ])
     
@@ -99,16 +97,14 @@ async def start_callback(client: Client, callback_query):
                     url=f"https://t.me/{BOT_USERNAME}?startchannel=true"
                 )
             ],
-            [
-                InlineKeyboardButton("🔗 Connect Chat", callback_data="connect_chat")
-            ],
-            [
-                InlineKeyboardButton("⚙️ Select Mode", callback_data="select_mode")
-            ],
-            [
-                InlineKeyboardButton("📋 My Connections", callback_data="my_connections"),
-                InlineKeyboardButton("📊 Status", callback_data="status")
-            ]
+        [
+            InlineKeyboardButton("Auto Forward", callback_data="select_mode"),
+            InlineKeyboardButton("Connect Chat", callback_data="connect_chat")
+        ],
+        [
+            InlineKeyboardButton("My Connections", callback_data="my_connections"),
+            InlineKeyboardButton("Status", callback_data="status")
+        ]
         ]),
         disable_web_page_preview=True
     )

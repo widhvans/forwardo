@@ -125,7 +125,7 @@ Configure settings:
     ]
 
     if session["mode"] == "forward_old":
-        key_rows.append([InlineKeyboardButton("Set Start Message", callback_data="set_start_msg_hub")])
+        key_rows.append([InlineKeyboardButton("🏁 Set Start Message", callback_data="set_start_msg_hub")])
     
     if can_start:
         key_rows.append([InlineKeyboardButton("Start Forwarding", callback_data="start_session")])
