@@ -92,19 +92,13 @@ async def start_session_callback(client: Client, callback_query: CallbackQuery):
     
     active_sessions[user_id] = session.copy()
     active_sessions[user_id]["active"] = True
-    del temp_sessions[user_id]
     
-    display_text = f"""
-✅ **Forwarding Started!**
-
-**Mode:** {session['mode'].replace('_', ' ').title()}
-📤 Sources: {len(session['sources'])}
-📥 Targets: {len(session['targets'])}
-"""
-    await callback_query.message.edit_text(
-        display_text, 
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⏹ Stop Forwarding", callback_data="stop_forwarding")]])
-    )
+    # We do NOT delete temp_sessions anymore to preserve state for Hub view
+    # But we should sync it just in case
+    # temp_sessions[user_id] = session.copy() 
+    
+    # Update UI to running state (Stop Button will be rendered by setup_hub)
+    await setup_hub_callback(client, callback_query)
     
     if session["mode"] == "forward_old" and s_msg_id:
         task = asyncio.create_task(
@@ -116,16 +110,42 @@ async def start_session_callback(client: Client, callback_query: CallbackQuery):
 async def setup_hub_callback(client: Client, callback_query: CallbackQuery):
     """Step 2: Session Hub (Central Config)"""
     user_id = callback_query.from_user.id
-    if user_id not in temp_sessions:
+    
+    # Check if active
+    is_active = (user_id in active_sessions)
+    
+    if is_active:
+        # Use active session data
+        session = active_sessions[user_id]
+        if user_id not in temp_sessions:
+            temp_sessions[user_id] = session.copy()
+    elif user_id in temp_sessions:
+        session = temp_sessions[user_id]
+    else:
+        # No session, go back
         await select_mode_callback(client, callback_query)
         return
 
     data = callback_query.data
-    # Set mode only if changed/fresh
-    if "instant" in data: temp_sessions[user_id]["mode"] = "instant"
-    elif "old" in data: temp_sessions[user_id]["mode"] = "forward_old"
+    # Set mode only if changed/fresh AND NOT ACTIVE (lock mode changes while running)
+    if not is_active:
+        if "instant" in data: session["mode"] = "instant"
+        elif "old" in data: session["mode"] = "forward_old"
+        elif "setup_hub" in data: # Re-render request
+             # Maintain current mode
+             pass
         
-    session = temp_sessions[user_id]
+    # Ensure temp/session sync if we just initialized it
+    if is_active:
+         pass # session is ref to active_sessions[uid] if we did assignment above? No, dict copy.
+         # Actually session = ... assigns reference.
+         # If is_active, session = active_sessions[user_id] (Reference!)
+         # If not active, session = temp_sessions[user_id] (Reference!)
+         # Be careful not to mutate active_session if we want edits to apply only after restart?
+         # User asked for "Stop" button to appear. Edits while running? 
+         # Complexity. Let's assume locking edits for safety or just visual toggle.
+         pass
+         
     mode_name = "Instant Forward" if session["mode"] == "instant" else "Forward Old"
     
     src_count = len(session["sources"])
@@ -147,8 +167,10 @@ async def setup_hub_callback(client: Client, callback_query: CallbackQuery):
             start_status = "❌ Not Set"
             can_start = False
     
+    status_header = "\n🟢 **RUNNING**" if is_active else ""
+    
     text = f"""
-⚙️ **Session Configuration: {mode_name}**
+⚙️ **Session Configuration: {mode_name}**{status_header}
 
 Configure settings:
 
@@ -175,17 +197,17 @@ Configure settings:
     # Reset button
     key_rows.append([InlineKeyboardButton("🔄 Reset Selection", callback_data="reset_selection")])
     
-    if can_start:
+    if is_active:
+        key_rows.append([InlineKeyboardButton("⏹ Stop Forwarding", callback_data="stop_forwarding")])
+    elif can_start:
         key_rows.append([InlineKeyboardButton("▶️ Start Forwarding", callback_data="start_session")])
-    # Warning button removed
-
+    
+    # Back button always goes to mode selection
     key_rows.append([InlineKeyboardButton("Back", callback_data="select_mode")])
     
-    # Helper to avoid "message not modified" error
     try:
         await callback_query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(key_rows))
     except:
-        # If text is same (e.g. from noop), just answer
         pass
 
 
@@ -534,15 +556,20 @@ async def forward_message_handler(client, message):
 async def stop_forwarding_callback(client, callback_query, user_id_override=None):
     user_id = user_id_override or callback_query.from_user.id
     await db.stop_session(user_id)
-    if user_id in active_sessions: del active_sessions[user_id]
+    if user_id in active_sessions:
+        if user_id not in temp_sessions:
+             temp_sessions[user_id] = active_sessions[user_id].copy()
+        else:
+             temp_sessions[user_id] = active_sessions[user_id].copy()
+        del active_sessions[user_id]
+
     if user_id in forward_tasks:
         forward_tasks[user_id].cancel()
         del forward_tasks[user_id]
     
     if callback_query:
         await callback_query.answer("⏹ Stopped!", show_alert=True)
-        from handlers.start import start_callback
-        await start_callback(client, callback_query)
+        await setup_hub_callback(client, callback_query)
 
 # Exports/Placeholders
 async def stop_command(c, m): await stop_forwarding_callback(c, None, m.from_user.id)
