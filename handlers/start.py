@@ -1,12 +1,13 @@
 """
 Start Command Handler - Welcome Interface
-Using Pyrogram native RequestChat (for updated version)
+Using Pyrogram native KeyboardButtonRequestChat
 """
 
 from pyrogram import Client, filters
 from pyrogram.types import (
     Message, InlineKeyboardMarkup, InlineKeyboardButton,
-    ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+    ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove,
+    KeyboardButtonRequestChat  # This is the correct import
 )
 from database.mongo import db
 from config import BOT_USERNAME
@@ -49,7 +50,6 @@ async def start_command(client: Client, message: Message):
     
     # Create inline keyboard
     keyboard = InlineKeyboardMarkup([
-        # Add to group/channel buttons
         [
             InlineKeyboardButton(
                 "➕ Add to Group",
@@ -60,15 +60,12 @@ async def start_command(client: Client, message: Message):
                 url=f"https://t.me/{BOT_USERNAME}?startchannel=true"
             )
         ],
-        # Connect Chat button
         [
             InlineKeyboardButton("🔗 Connect Chat", callback_data="connect_chat")
         ],
-        # Mode selection
         [
             InlineKeyboardButton("⚙️ Select Mode", callback_data="select_mode")
         ],
-        # View connections and status
         [
             InlineKeyboardButton("📋 My Connections", callback_data="my_connections"),
             InlineKeyboardButton("📊 Status", callback_data="status")
@@ -85,10 +82,7 @@ async def start_command(client: Client, message: Message):
 async def start_callback(client: Client, callback_query):
     """Handle start menu callback"""
     try:
-        await callback_query.message.reply_text(
-            "🔙",
-            reply_markup=ReplyKeyboardRemove()
-        )
+        await callback_query.message.reply_text("🔙", reply_markup=ReplyKeyboardRemove())
     except:
         pass
     
@@ -124,72 +118,46 @@ async def start_callback(client: Client, callback_query):
 async def connect_chat_callback(client: Client, callback_query):
     """Show Connect Chat with native picker tiles"""
     
-    # Using KeyboardButton.RequestChat (requires Pyrogram v2.1+)
-    try:
-        keyboard = ReplyKeyboardMarkup(
-            [
-                [
-                    KeyboardButton(
-                        text="👥 Select Group",
-                        request_chat=KeyboardButton.RequestChat(
-                            request_id=1,
-                            chat_is_channel=False,
-                            bot_is_member=True
-                        )
-                    ),
-                    KeyboardButton(
-                        text="📢 Select Channel",
-                        request_chat=KeyboardButton.RequestChat(
-                            request_id=2,
-                            chat_is_channel=True,
-                            bot_is_member=True
-                        )
-                    )
-                ],
-                [KeyboardButton("❌ Cancel")]
-            ],
-            resize_keyboard=True,
-            one_time_keyboard=True
-        )
-        
-        text = """
-🔗 **Connect Chat**
-
-नीचे के tiles पर click करें और list से chat select करें:
-
-**👥 Select Group** - Group picker (Choose a Group)
-**📢 Select Channel** - Channel picker (Choose a Channel)
-
-⚠️ **Note:** Bot ko pehle chat me add/admin banana zaroori hai!
-"""
-        await callback_query.message.reply_text(text, reply_markup=keyboard)
-        
-    except Exception as e:
-        # Fallback for older pyrogram if upgrade failed
-        await callback_query.message.reply_text(
-            f"❌ Error: {e}\nFalling back to text buttons...",
-            reply_markup=ReplyKeyboardRemove()
-        )
-        # Use simpler text buttons
-        await tile_fallback(client, callback_query)
-
-    await callback_query.answer()
-
-
-async def tile_fallback(client: Client, callback_query):
-    """Fallback text buttons if native picker fails"""
+    # Using separate KeyboardButtonRequestChat class
     keyboard = ReplyKeyboardMarkup(
         [
-            [KeyboardButton("👥 Select Group (Text)"), KeyboardButton("📢 Select Channel (Text)")],
+            [
+                KeyboardButton(
+                    text="👥 Select Group",
+                    request_chat=KeyboardButtonRequestChat(
+                        button_id=1,
+                        chat_is_channel=False,
+                        bot_is_member=True
+                    )
+                ),
+                KeyboardButton(
+                    text="📢 Select Channel",
+                    request_chat=KeyboardButtonRequestChat(
+                        button_id=2,
+                        chat_is_channel=True,
+                        bot_is_member=True
+                    )
+                )
+            ],
             [KeyboardButton("❌ Cancel")]
         ],
         resize_keyboard=True,
         one_time_keyboard=True
     )
-    await callback_query.message.reply_text(
-        "Select Type (Text Callback):",
-        reply_markup=keyboard
-    )
+    
+    text = """
+🔗 **Connect Chat**
+
+नीचे के tiles पर click करें:
+
+**👥 Select Group** - Group list खुलेगी
+**📢 Select Channel** - Channel list खुलेगी
+
+⚠️ Bot को chat में पहले से member/admin होना जरूरी है!
+"""
+    
+    await callback_query.message.reply_text(text, reply_markup=keyboard)
+    await callback_query.answer()
 
 
 async def handle_chat_shared(client: Client, message: Message):
@@ -198,13 +166,9 @@ async def handle_chat_shared(client: Client, message: Message):
     
     user_id = message.from_user.id
     
-    # Get shared chat info (updated attr names for recent pyrogram)
-    chat_shared = getattr(message, "chat_shared", None) or getattr(message, "user_shared", None)
-    
-    if chat_shared:
-        chat_id = chat_shared.chat_id
-        # request_id sent in the button
-        request_id = getattr(chat_shared, "request_id", 0) 
+    # Get shared chat info
+    if message.chat_shared:
+        chat_id = message.chat_shared.chat_id
         
         # Get chat details
         try:
@@ -248,6 +212,10 @@ async def handle_chat_shared(client: Client, message: Message):
 async def handle_tile_button(client: Client, message: Message):
     """Fallback handler for text buttons"""
     text = message.text
+    if "Cancel" in text:
+        await message.reply_text("❌ Cancelled!", reply_markup=ReplyKeyboardRemove())
+        return
+        
     if "Group" in text:
         chat_type = "group"
     elif "Channel" in text:
@@ -279,7 +247,7 @@ async def add_target_callback(client: Client, callback_query):
     await quick_connect_internal(client, callback_query, chat_id, "target")
 
 
-# Placeholders for old callbacks to prevent errors if clicked
+# Placeholders
 async def pick_group_callback(client, callback_query): pass
 async def pick_channel_callback(client, callback_query): pass
 async def tile_source_callback(client, callback_query): pass
