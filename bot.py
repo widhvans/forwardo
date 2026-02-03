@@ -21,7 +21,9 @@ app = Client(
 # ==================== Import Handlers ====================
 from handlers.start import (
     start_command, start_callback, connect_chat_callback,
-    pick_group_callback, pick_channel_callback, handle_peer_selected
+    pick_group_callback, pick_channel_callback, handle_peer_selected,
+    handle_tile_button, tile_source_callback, tile_target_callback,
+    cancel_tile_callback
 )
 from handlers.connect import (
     connect_group_callback, connect_channel_callback,
@@ -201,8 +203,14 @@ async def status_handler(client: Client, message: Message):
 
 @app.on_message(filters.private & filters.text & ~filters.command(["start", "stop", "stats", "broadcast", "users", "connect", "myconnections", "mode", "status"]))
 async def text_message_handler(client: Client, message: Message):
-    """Handle text messages for keywords input"""
+    """Handle text messages for keywords input and tile buttons"""
     user_id = message.from_user.id
+    text = message.text
+    
+    # Handle tile buttons (Group/Channel)
+    if text in ["👥 Group", "📢 Channel"]:
+        await handle_tile_button(client, message)
+        return
     
     if user_id in user_states:
         state = user_states[user_id]
@@ -268,6 +276,14 @@ async def callback_handler(client: Client, callback_query: CallbackQuery):
         await delete_connection_callback(client, callback_query)
     elif data.startswith("quick_source_") or data.startswith("quick_target_"):
         await quick_connect_callback(client, callback_query)
+    
+    # Tile button callbacks
+    elif data.startswith("tile_source_"):
+        await tile_source_callback(client, callback_query)
+    elif data.startswith("tile_target_"):
+        await tile_target_callback(client, callback_query)
+    elif data == "cancel_tile":
+        await cancel_tile_callback(client, callback_query)
     
     # Mode handlers
     elif data == "select_mode":
