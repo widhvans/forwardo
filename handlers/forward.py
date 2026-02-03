@@ -127,6 +127,9 @@ Configure settings:
     if session["mode"] == "forward_old":
         key_rows.append([InlineKeyboardButton("🏁 Set Start Message", callback_data="set_start_msg_hub")])
     
+    # Reset button
+    key_rows.append([InlineKeyboardButton("🔄 Reset Selection", callback_data="reset_selection")])
+    
     if can_start:
         key_rows.append([InlineKeyboardButton("Start Forwarding", callback_data="start_session")])
     # Warning button removed
@@ -306,29 +309,38 @@ async def menu_chat_selection(client: Client, callback_query: CallbackQuery, is_
     selected_list = session["sources"] if is_source else session["targets"]
     other_list = session["targets"] if is_source else session["sources"] # Validation
     
-    # Fetch all connected chats (both types can be used for either ideally, but let's stick to user definitions for now)
-    # User said: "connected chats me koi bhi chat ham rakh skte hai... me se target ya source"
-    # This implies Source list should show ALL connections, Target list should show ALL connections.
+    # Fetch all connected chats (Show ALL available connections)
+    # User requirement: "make sure connected chats show... target selected source me nhi"
+    # Logic: Show ALL connections, but filtered:
+    # 1. Any chat is eligible to be a Source OR a Target.
+    # 2. BUT a chat cannot be BOTH in the same session.
+    # 3. So if a chat is in 'other_list', exclude it from this list.
     
     all_connections = await db.get_user_connections(user_id) # Fetch ALL
     
-    # If get_user_connections(user_id) returns everything, we need to sort/filter unique?
-    # Function in mongo.py defaults format: {"connection_type": ...}
+    # Remove duplicates if any
+    unique_conns = []
+    seen = set()
+    for c in all_connections:
+        if c["chat_id"] not in seen:
+            unique_conns.append(c)
+            seen.add(c["chat_id"])
     
     text = f"📤 **Select Sources**" if is_source else f"📥 **Select Targets**"
     text += "\n\nTick chats to include:"
     
     buttons = []
-    for chat in all_connections:
+    for chat in unique_conns:
         chat_id = chat["chat_id"]
         
-        # Validation: Chat cannot be in OTHER list
+        # Exclusivity Validation: Chat cannot be in OTHER list
+        # If I'm selecting Sources, and Chat A is already a Target, don't show it here.
         if chat_id in other_list:
-            continue # Skip showing chats already selected in the opposing role
+            continue 
             
         is_selected = chat_id in selected_list
         mark = "✅" if is_selected else "❌"
-        # toggle_chat_source_12345
+        # Type in callback (source/target) tells toggle function which list to update
         buttons.append([InlineKeyboardButton(f"{mark} {chat['chat_title']}", callback_data=f"toggle_chat_{chat_type}_{chat_id}")])
     
     buttons.append([InlineKeyboardButton("Back to Hub", callback_data="setup_hub")])
@@ -350,6 +362,16 @@ async def toggle_chat_callback(client: Client, callback_query: CallbackQuery):
     else: lst.append(c_id)
     
     await menu_chat_selection(client, callback_query, is_source=(c_type=="source"))
+
+
+async def reset_selection_callback(client: Client, callback_query: CallbackQuery):
+    """Reset sources and targets"""
+    user_id = callback_query.from_user.id
+    if user_id in temp_sessions:
+        temp_sessions[user_id]["sources"] = []
+        temp_sessions[user_id]["targets"] = []
+        await callback_query.answer("Selection Reset!", show_alert=True)
+        await setup_hub_callback(client, callback_query)
 
 
 async def start_session_callback(client: Client, callback_query: CallbackQuery):

@@ -62,7 +62,7 @@ class Database:
         })
         
         if existing:
-            return False, "यह chat पहले से connected है!"
+            return False, "This chat is already connected!"
         
         # Count existing connections
         count = await self.connections.count_documents({
