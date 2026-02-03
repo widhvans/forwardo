@@ -225,7 +225,16 @@ async def text_message_handler(client: Client, message: Message):
 
 @app.on_message(filters.private & filters.forwarded)
 async def forwarded_handler(client: Client, message: Message):
-    """Handle forwarded messages for connection"""
+    """Handle forwarded messages for connection or mode info"""
+    user_id = message.from_user.id
+    
+    # Check if waiting for last msg input
+    if user_id in user_states:
+        if user_states[user_id].get("action") == "wait_for_last_msg":
+             from handlers.forward import handle_last_msg_input
+             await handle_last_msg_input(client, message)
+             return
+             
     await handle_forwarded_message(client, message)
 
 

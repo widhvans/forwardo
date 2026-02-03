@@ -186,26 +186,20 @@ async def mode_forward_old_callback(client: Client, callback_query: CallbackQuer
     """Setup Forward Old Messages mode"""
     user_id = callback_query.from_user.id
     
-    sources = await db.get_user_connections(user_id, "source")
+    # Set state to waiting for start message
+    user_states[user_id] = {"action": "wait_for_last_msg"}
     
-    text = f"""
+    text = """
 2️⃣ **Forward Old Messages**
 
-यह mode **History** (Old messages) forward करेगा।
-Bot **Last Message** से शुरू करके **First Message** तक (Reverse order) जाएगा।
+Bot chat history directly read nahi kar sakta.
+Isliye, **Source Chat** ka wo **Last Message** forward karein jahan se aap copying start karna chahte hain.
 
-⚠️ **Note:**
-- यह process slow हो सकता है (Telegram Limits)
-- Large chats में time लगेगा
-- Progress logs मिलते रहेंगे
+Bot us message se lekar uupar (history) ke messages copy karega.
 
-📤 **Sources ({len(sources)}):**
+👉 **Abhi Last Message forward karein...**
 """
-    for s in sources:
-        text += f"• {s['chat_title']}\n"
-    
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("▶️ Start Forwarding", callback_data="start_forward_old")],
         [InlineKeyboardButton("❌ Cancel", callback_data="select_mode")]
     ])
     
@@ -213,21 +207,72 @@ Bot **Last Message** से शुरू करके **First Message** तक (
     await callback_query.answer()
 
 
-async def start_forward_old_callback(client: Client, callback_query: CallbackQuery):
-    """Start Forward Old Messages task"""
-    user_id = callback_query.from_user.id
+async def handle_last_msg_input(client: Client, message: Message):
+    """Handle the forwarded last message input"""
+    user_id = message.from_user.id
     
+    if user_id not in user_states:
+        return
+        
+    state = user_states[user_id]
+    if state.get("action") != "wait_for_last_msg":
+        return
+        
+    # Check if forwarded
+    if not message.forward_from_chat:
+        await message.reply_text(
+            "❌ Ye message kisi chat se forwarded nahi lag raha.\n"
+            "Please source channel/group se message forward karein."
+        )
+        return
+        
+    start_msg_id = message.forward_from_message_id
+    source_chat_id = message.forward_from_chat.id
+    source_title = message.forward_from_chat.title
+    
+    if not start_msg_id:
+         # Fallback if forward_from_message_id is missing (e.g. strict privacy)
+         # Try to rely on the fact that for channels, it usually works. 
+         # Or ask user to send link.
+         # For now, let's assume it works or ask for link.
+         await message.reply_text("❌ Message ID detect nahi kar paya. Kya ye channel message hai?")
+         return
+
+    # Verify this source is connected
     sources = await db.get_user_connections(user_id, "source")
-    targets = await db.get_user_connections(user_id, "target")
+    connected = False
+    for s in sources:
+        if s["chat_id"] == source_chat_id:
+            connected = True
+            break
     
-    source_ids = [s["chat_id"] for s in sources]
+    if not connected:
+        await message.reply_text(f"❌ Ye chat ({source_title}) connected sources mein nahi hai!")
+        return
+        
+    # Clear state
+    del user_states[user_id]
+    
+    # Start forwarding
+    await start_forward_old_task(client, message, source_chat_id, start_msg_id)
+
+
+async def start_forward_old_task(client: Client, message: Message, source_id: int, start_id: int):
+    """Initialize Forward Old Task"""
+    user_id = message.chat.id
+    
+    targets = await db.get_user_connections(user_id, "target")
+    if not targets:
+        await message.reply_text("❌ No blocking targets found!")
+        return
+        
     target_ids = [t["chat_id"] for t in targets]
     
     # Save session
     await db.save_session(
         user_id=user_id,
         mode="forward_old",
-        sources=source_ids,
+        sources=[source_id], # Only this source for now
         targets=target_ids,
         keywords=[],
         active=True
@@ -235,96 +280,88 @@ async def start_forward_old_callback(client: Client, callback_query: CallbackQue
     
     active_sessions[user_id] = {
         "mode": "forward_old",
-        "sources": source_ids,
+        "sources": [source_id],
         "targets": target_ids
     }
     
-    await callback_query.message.edit_text(
-        "🚀 **Forwarding Started (Old Messages)!**\n\nCheck logs for progress...",
+    await message.reply_text(
+        f"🚀 **Forwarding Started!**\n\n"
+        f"Source: `{source_id}`\n"
+        f"Starting ID: `{start_id}` (Going backwards)\n\n"
+        f"Check logs/status for updates.",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("⏹ Stop", callback_data="stop_forwarding")],
-            [InlineKeyboardButton("📊 Status", callback_data="status")]
+            [InlineKeyboardButton("⏹ Stop", callback_data="stop_forwarding")]
         ])
     )
     
     # Start background task
-    task = asyncio.create_task(forward_old_messages_loop(client, user_id, source_ids, target_ids))
+    task = asyncio.create_task(
+        forward_old_messages_loop(client, user_id, [source_id], target_ids, start_id)
+    )
     forward_tasks[user_id] = task
-    logger.info(f"User {user_id} started Forward Old Messages")
+    logger.info(f"User {user_id} started Forward Old from msg {start_id}")
 
 
-async def forward_old_messages_loop(client: Client, user_id: int, source_ids: list, target_ids: list):
+async def forward_old_messages_loop(client: Client, user_id: int, source_ids: list, target_ids: list, start_id: int = 0):
     """Background task to iterate and forward old messages"""
-    logger.info(f"Starting background loop for user {user_id}")
+    logger.info(f"Starting background loop for user {user_id} from ID {start_id}")
     
     total_forwarded = 0
+    source_id = source_ids[0] # Single source focus
+    
+    current_id = start_id
     
     try:
-        for source_id in source_ids:
-            # Check if stopped
-            if user_id not in active_sessions or active_sessions[user_id]["mode"] != "forward_old":
-                break
-                
-            logger.info(f"Processing source {source_id} for user {user_id}")
-            
-            # Get last message ID
-            last_msg_id = 0
-            async for msg in client.get_chat_history(source_id, limit=1):
-                last_msg_id = msg.id
-            
-            if last_msg_id == 0:
-                continue
-            
-            logger.info(f"Source {source_id} last message ID: {last_msg_id}")
-            
-            # Iterate backwards
-            # Batch size for efficiency? iterating 1 by 1 is safe but slow.
-            # User asked: "vo us chat id ka last msg id le leta hai then uski link me se id numer se ek ke krke kam krta tha"
-            # Implies 1 by 1 iteration.
-            
-            current_id = last_msg_id
-            
-            while current_id > 0:
-                # Check stop signal
-                if user_id not in active_sessions:
-                    logger.info("Session stopped by user")
-                    return
+        while current_id > 0:
+            # Check stop signal
+            if user_id not in active_sessions:
+                logger.info("Session stopped by user")
+                return
 
-                try:
-                    # Fetch and forward
-                    messages = await client.get_messages(source_id, current_id)
-                    
-                    if messages and not messages.empty:
-                         for target_id in target_ids:
+            try:
+                # Fetch and forward SINGLE message
+                # get_messages with single id returns single Message object (not list) or None
+                message = await client.get_messages(source_id, current_id)
+                
+                # Check if message exists and is not empty service message
+                if message and not message.empty:
+                        for target_id in target_ids:
                             try:
-                                await messages.copy(target_id)
-                                # await client.forward_messages(target_id, source_id, current_id)
-                                logger.info(f"Forwarded msg {current_id} from {source_id} to {target_id}")
+                                # Use copy to send fresh message
+                                await message.copy(target_id)
+                                logger.info(f"Forwarded msg {current_id} from {source_id}")
                             except FloodWait as e:
                                 logger.warning(f"FloodWait: Sleeping {e.value}s")
                                 await asyncio.sleep(e.value)
-                                # Retry
-                                await messages.copy(target_id)
+                                # Retry once
+                                await message.copy(target_id)
                             except Exception as e:
-                                logger.error(f"Failed to forward {current_id}: {e}")
-                         
-                         total_forwarded += 1
-                         if total_forwarded % 50 == 0:
-                             await client.send_message(user_id, f"📊 Progress: {total_forwarded} messages forwarded...")
-                    
-                except Exception as e:
-                    logger.error(f"Error fetching msg {current_id}: {e}")
-                
-                current_id -= 1
-                await asyncio.sleep(2.0) # Safe delay to avoid flood
+                                logger.error(f"Failed to copy {current_id}: {e}")
+                        
+                        total_forwarded += 1
+                        if total_forwarded % 20 == 0:
+                            try:
+                                await client.send_message(user_id, f"📊 Progress: Forwarded {total_forwarded} messages...\nCurrent ID: {current_id}")
+                            except:
+                                pass # formatting or network error
+                else:
+                    logger.info(f"Message {current_id} was empty or deleted/service")
+
+            except Exception as e:
+                logger.error(f"Error handling msg {current_id}: {e}")
+            
+            # Decrement ID to go backwards
+            current_id -= 1
+            
+            # Rate limit safegaurd
+            await asyncio.sleep(1.5) 
                 
     except Exception as e:
-        logger.error(f"Fatal error in loop for user {user_id}: {e}")
+        logger.error(f"Fatal error in loop: {e}")
     finally:
-        logger.info(f"Loop finished for user {user_id}. Total: {total_forwarded}")
+        logger.info(f"Loop finished. Total: {total_forwarded}")
         if user_id in active_sessions:
              await client.send_message(user_id, f"✅ **Forwarding Completed!**\nTotal: {total_forwarded} messages.")
-             # Cleanup
              await db.stop_session(user_id)
              del active_sessions[user_id]
 
