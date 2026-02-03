@@ -1,11 +1,16 @@
 """
 Start Command Handler - Welcome Interface
+Uses raw pyrogram types for request_peer (native chat picker)
 """
 
 from pyrogram import Client, filters
 from pyrogram.types import (
     Message, InlineKeyboardMarkup, InlineKeyboardButton,
     ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+)
+from pyrogram.raw.types import (
+    RequestPeerTypeChat, RequestPeerTypeBroadcast,
+    KeyboardButtonRequestPeer
 )
 from database.mongo import db
 from config import BOT_USERNAME
@@ -59,7 +64,7 @@ async def start_command(client: Client, message: Message):
                 url=f"https://t.me/{BOT_USERNAME}?startchannel=true"
             )
         ],
-        # Connect Chat button - opens tiles at bottom
+        # Connect Chat button
         [
             InlineKeyboardButton("🔗 Connect Chat", callback_data="connect_chat")
         ],
@@ -83,11 +88,13 @@ async def start_command(client: Client, message: Message):
 
 async def start_callback(client: Client, callback_query):
     """Handle start menu callback"""
-    # Remove any existing reply keyboard
-    await callback_query.message.reply_text(
-        "🔙 Main Menu",
-        reply_markup=ReplyKeyboardRemove()
-    )
+    try:
+        await callback_query.message.reply_text(
+            "🔙",
+            reply_markup=ReplyKeyboardRemove()
+        )
+    except:
+        pass
     
     await callback_query.message.edit_text(
         WELCOME_TEXT,
@@ -119,39 +126,109 @@ async def start_callback(client: Client, callback_query):
 
 
 async def connect_chat_callback(client: Client, callback_query):
-    """Show Connect Chat with bottom tiles for Group/Channel"""
+    """Show Connect Chat with native picker tiles"""
     
-    # Send message with reply keyboard tiles at bottom
-    tile_keyboard = ReplyKeyboardMarkup(
+    # Create reply keyboard with request_peer for native Telegram picker
+    # Using raw keyboard button request peer
+    keyboard = ReplyKeyboardMarkup(
         [
             [
-                KeyboardButton("👥 Group"),
-                KeyboardButton("📢 Channel")
-            ]
+                KeyboardButton(
+                    text="👥 Select Group",
+                    request_chat=KeyboardButton.RequestChat(
+                        button_id=1,
+                        chat_is_channel=False,
+                        bot_is_member=True
+                    )
+                ),
+                KeyboardButton(
+                    text="📢 Select Channel",
+                    request_chat=KeyboardButton.RequestChat(
+                        button_id=2,
+                        chat_is_channel=True,
+                        bot_is_member=True
+                    )
+                )
+            ],
+            [KeyboardButton("❌ Cancel")]
         ],
         resize_keyboard=True,
-        one_time_keyboard=False
+        one_time_keyboard=True
     )
     
     text = """
 🔗 **Connect Chat**
 
-नीचे के tiles से चुनें:
-• **👥 Group** - Group connect करने के लिए
-• **📢 Channel** - Channel connect करने के लिए
+नीचे के buttons पर click करें:
 
-फिर उस chat का कोई message forward करें।
+**👥 Select Group** - Telegram group picker खुलेगा
+**📢 Select Channel** - Telegram channel picker खुलेगा
+
+Bot जहां member है वही chats दिखेंगे।
 """
     
-    await callback_query.message.reply_text(
-        text,
-        reply_markup=tile_keyboard
-    )
+    await callback_query.message.reply_text(text, reply_markup=keyboard)
     await callback_query.answer()
 
 
+async def handle_chat_shared(client: Client, message: Message):
+    """Handle when user selects a chat from native picker"""
+    from utils.helpers import check_admin_status
+    
+    user_id = message.from_user.id
+    
+    # Get shared chat info
+    if hasattr(message, 'chat_shared') and message.chat_shared:
+        chat_id = message.chat_shared.chat_id
+        button_id = message.chat_shared.button_id
+        
+        # Get chat details
+        try:
+            chat = await client.get_chat(chat_id)
+            chat_title = chat.title or "Unknown"
+            chat_type = "channel" if chat.type.value == "channel" else "group"
+        except Exception as e:
+            await message.reply_text(
+                f"❌ Chat info नहीं मिली: {e}",
+                reply_markup=ReplyKeyboardRemove()
+            )
+            return
+        
+        # Check if bot is admin
+        is_admin, error = await check_admin_status(client, chat_id)
+        if not is_admin:
+            await message.reply_text(
+                f"❌ {error}\n\nBot को पहले {chat_type} में admin बनाएं!",
+                reply_markup=ReplyKeyboardRemove()
+            )
+            return
+        
+        # Ask source or target
+        await message.reply_text(
+            f"✅ **Chat Selected!**\n\n"
+            f"**{chat_title}**\n"
+            f"🆔 `{chat_id}`\n\n"
+            f"इसे किस तरह connect करना है?",
+            reply_markup=InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("📤 As Source", callback_data=f"add_source_{chat_id}"),
+                    InlineKeyboardButton("📥 As Target", callback_data=f"add_target_{chat_id}")
+                ],
+                [InlineKeyboardButton("❌ Cancel", callback_data="start_menu")]
+            ])
+        )
+        
+        # Remove reply keyboard
+        await message.reply_text("⬆️", reply_markup=ReplyKeyboardRemove())
+    else:
+        # Fallback for text buttons
+        text = message.text
+        if "Group" in text or "Channel" in text:
+            await handle_tile_button(client, message)
+
+
 async def handle_tile_button(client: Client, message: Message):
-    """Handle when user clicks Group or Channel tile button"""
+    """Handle when user clicks Group or Channel text button (fallback)"""
     from handlers.connect import user_states
     
     user_id = message.from_user.id
@@ -165,10 +242,7 @@ async def handle_tile_button(client: Client, message: Message):
         
         await message.reply_text(
             "👥 **Connect Group**\n\n"
-            "अब उस **Group** का कोई message forward करें जिसे connect करना है।\n\n"
-            "**📤 Source** के तौर पर connect होगा।\n"
-            "Target set करने के लिए फिर से यही process करें।\n\n"
-            "⚠️ Bot को group में admin होना जरूरी है!",
+            "अब उस **Group** का कोई message forward करें।",
             reply_markup=InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton("📤 As Source", callback_data="tile_source_group"),
@@ -186,10 +260,7 @@ async def handle_tile_button(client: Client, message: Message):
         
         await message.reply_text(
             "📢 **Connect Channel**\n\n"
-            "अब उस **Channel** का कोई message forward करें जिसे connect करना है।\n\n"
-            "**📤 Source** के तौर पर connect होगा।\n"
-            "Target set करने के लिए फिर से यही process करें।\n\n"
-            "⚠️ Bot को channel में admin होना जरूरी है!",
+            "अब उस **Channel** का कोई message forward करें।",
             reply_markup=InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton("📤 As Source", callback_data="tile_source_channel"),
@@ -198,6 +269,74 @@ async def handle_tile_button(client: Client, message: Message):
                 [InlineKeyboardButton("❌ Cancel", callback_data="cancel_tile")]
             ])
         )
+
+
+async def add_source_callback(client: Client, callback_query):
+    """Add chat as source from native picker"""
+    user_id = callback_query.from_user.id
+    chat_id = int(callback_query.data.replace("add_source_", ""))
+    
+    from utils.helpers import get_chat_info
+    
+    chat_info, error = await get_chat_info(client, chat_id)
+    if not chat_info:
+        await callback_query.answer(f"❌ {error}", show_alert=True)
+        return
+    
+    success, msg = await db.add_connection(
+        user_id=user_id,
+        chat_id=chat_id,
+        chat_title=chat_info["title"],
+        chat_type=chat_info["type"],
+        connection_type="source"
+    )
+    
+    if success:
+        await callback_query.message.edit_text(
+            f"✅ **Source Added!**\n\n"
+            f"📤 **{chat_info['title']}**\n"
+            f"🆔 `{chat_id}`",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔙 Main Menu", callback_data="start_menu")]
+            ])
+        )
+        await callback_query.answer("✅ Source added!")
+    else:
+        await callback_query.answer(f"❌ {msg}", show_alert=True)
+
+
+async def add_target_callback(client: Client, callback_query):
+    """Add chat as target from native picker"""
+    user_id = callback_query.from_user.id
+    chat_id = int(callback_query.data.replace("add_target_", ""))
+    
+    from utils.helpers import get_chat_info
+    
+    chat_info, error = await get_chat_info(client, chat_id)
+    if not chat_info:
+        await callback_query.answer(f"❌ {error}", show_alert=True)
+        return
+    
+    success, msg = await db.add_connection(
+        user_id=user_id,
+        chat_id=chat_id,
+        chat_title=chat_info["title"],
+        chat_type=chat_info["type"],
+        connection_type="target"
+    )
+    
+    if success:
+        await callback_query.message.edit_text(
+            f"✅ **Target Added!**\n\n"
+            f"📥 **{chat_info['title']}**\n"
+            f"🆔 `{chat_id}`",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔙 Main Menu", callback_data="start_menu")]
+            ])
+        )
+        await callback_query.answer("✅ Target added!")
+    else:
+        await callback_query.answer(f"❌ {msg}", show_alert=True)
 
 
 async def tile_source_callback(client: Client, callback_query):
@@ -215,8 +354,7 @@ async def tile_source_callback(client: Client, callback_query):
     
     await callback_query.message.edit_text(
         f"📤 **Source {chat_type.title()} Connect**\n\n"
-        f"अब उस {chat_type} का कोई message **forward** करें।\n\n"
-        f"⚠️ Bot को {chat_type} में admin होना जरूरी है!"
+        f"अब उस {chat_type} का कोई message **forward** करें।"
     )
     await callback_query.answer("✅ Source mode selected")
 
@@ -236,8 +374,7 @@ async def tile_target_callback(client: Client, callback_query):
     
     await callback_query.message.edit_text(
         f"📥 **Target {chat_type.title()} Connect**\n\n"
-        f"अब उस {chat_type} का कोई message **forward** करें।\n\n"
-        f"⚠️ Bot को {chat_type} में admin होना जरूरी है!"
+        f"अब उस {chat_type} का कोई message **forward** करें।"
     )
     await callback_query.answer("✅ Target mode selected")
 
@@ -252,7 +389,7 @@ async def cancel_tile_callback(client: Client, callback_query):
     
     await callback_query.message.edit_text("❌ Cancelled!")
     await callback_query.message.reply_text(
-        "🔙 Returning to main menu...",
+        "🔙",
         reply_markup=ReplyKeyboardRemove()
     )
     await callback_query.answer()
@@ -266,4 +403,5 @@ async def pick_channel_callback(client, callback_query):
     pass
 
 async def handle_peer_selected(client, message):
-    pass
+    """Redirect to handle_chat_shared"""
+    await handle_chat_shared(client, message)

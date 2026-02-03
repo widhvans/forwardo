@@ -23,7 +23,8 @@ from handlers.start import (
     start_command, start_callback, connect_chat_callback,
     pick_group_callback, pick_channel_callback, handle_peer_selected,
     handle_tile_button, tile_source_callback, tile_target_callback,
-    cancel_tile_callback
+    cancel_tile_callback, add_source_callback, add_target_callback,
+    handle_chat_shared
 )
 from handlers.connect import (
     connect_group_callback, connect_channel_callback,
@@ -284,6 +285,12 @@ async def callback_handler(client: Client, callback_query: CallbackQuery):
         await tile_target_callback(client, callback_query)
     elif data == "cancel_tile":
         await cancel_tile_callback(client, callback_query)
+    
+    # Native picker callbacks (add_source_/add_target_)
+    elif data.startswith("add_source_"):
+        await add_source_callback(client, callback_query)
+    elif data.startswith("add_target_"):
+        await add_target_callback(client, callback_query)
     
     # Mode handlers
     elif data == "select_mode":
