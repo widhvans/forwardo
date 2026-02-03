@@ -19,7 +19,10 @@ app = Client(
 
 
 # ==================== Import Handlers ====================
-from handlers.start import start_command, start_callback
+from handlers.start import (
+    start_command, start_callback, connect_chat_callback,
+    pick_group_callback, pick_channel_callback, handle_peer_selected
+)
 from handlers.connect import (
     connect_group_callback, connect_channel_callback,
     connect_source_callback, connect_target_callback,
@@ -216,6 +219,21 @@ async def forwarded_handler(client: Client, message: Message):
     await handle_forwarded_message(client, message)
 
 
+# ==================== Chat Shared Handler (Request Peer) ====================
+
+@app.on_message(filters.private & filters.chat_shared)
+async def chat_shared_handler(client: Client, message: Message):
+    """Handle when user selects a chat via request_peer"""
+    await handle_peer_selected(client, message)
+
+
+@app.on_message(filters.private & filters.regex(r"^❌ Cancel$"))
+async def cancel_handler(client: Client, message: Message):
+    """Handle cancel button from reply keyboard"""
+    from pyrogram.types import ReplyKeyboardRemove
+    await message.reply_text("❌ Cancelled!", reply_markup=ReplyKeyboardRemove())
+
+
 # ==================== Group/Channel Message Handler ====================
 
 @app.on_message(filters.group | filters.channel)
@@ -235,7 +253,15 @@ async def callback_handler(client: Client, callback_query: CallbackQuery):
     if data == "start_menu":
         await start_callback(client, callback_query)
     
-    # Connect handlers
+    # Connect Chat handlers (new request_peer based)
+    elif data == "connect_chat":
+        await connect_chat_callback(client, callback_query)
+    elif data == "pick_group":
+        await pick_group_callback(client, callback_query)
+    elif data == "pick_channel":
+        await pick_channel_callback(client, callback_query)
+    
+    # Old Connect handlers (forward based)
     elif data == "connect_group":
         await connect_group_callback(client, callback_query)
     elif data == "connect_channel":
