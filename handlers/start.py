@@ -80,7 +80,9 @@ async def start_command(client: Client, message: Message):
 async def start_callback(client: Client, callback_query):
     """Handle start menu callback"""
     try:
-        await callback_query.message.reply_text("🔙", reply_markup=ReplyKeyboardRemove())
+        # Clear reply keyboard if any
+        msg = await callback_query.message.reply_text(".", reply_markup=ReplyKeyboardRemove())
+        await msg.delete()
     except:
         pass
     
@@ -200,29 +202,43 @@ async def handle_chat_shared(client: Client, message: Message):
     # Check if bot is admin
     is_admin, error = await check_admin_status(client, chat_id)
     if not is_admin:
-        await message.reply_text(
+        msg = await message.reply_text(
             f"❌ {error}\n\nBot को पहले **{chat_title}** में admin बनाएं!",
             reply_markup=ReplyKeyboardRemove()
         )
         return
     
-    # Ask source or target
-    await message.reply_text(
-        f"✅ **Chat Selected!**\n\n"
-        f"**{chat_title}**\n"
-        f"🆔 `{chat_id}`\n\n"
-        f"इसे किस तरह connect करना है?",
-        reply_markup=InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("📤 As Source", callback_data=f"add_source_{chat_id}"),
-                InlineKeyboardButton("📥 As Target", callback_data=f"add_target_{chat_id}")
-            ],
-            [InlineKeyboardButton("❌ Cancel", callback_data="start_menu")]
-        ])
+    # Auto-add as 'source' (used as generic connection due to limits/DB structure)
+    # User requested removal of choice buttons, so we default to adding it.
+    from handlers.connect import quick_connect_internal
+    # We can't use quick_connect_internal easily because it expects CallbackQuery.
+    # We'll use db directly.
+    
+    success, msg_text = await db.add_connection(
+        user_id=user_id,
+        chat_id=chat_id,
+        chat_title=chat_title,
+        chat_type=chat.type.value,
+        connection_type="source" # Defaulting to source
     )
     
-    # Remove reply keyboard
-    await message.reply_text("⬆️", reply_markup=ReplyKeyboardRemove())
+    if success:
+        await message.reply_text(
+            f"✅ **Chat Selected!**\n\n"
+            f"**{chat_title}**\n"
+            f"🆔 `{chat_id}`\n\n"
+            f"Added to connections.",
+            reply_markup=ReplyKeyboardRemove()
+        )
+    else:
+        # If already exists or limit reached, try target?
+        # If "already connected", it's fine.
+        await message.reply_text(
+            f"⚠️ {msg_text}\n\n"
+            f"**{chat_title}**\n"
+            f"🆔 `{chat_id}`",
+            reply_markup=ReplyKeyboardRemove()
+        )
 
 
 async def handle_tile_button(client: Client, message: Message):
