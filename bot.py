@@ -123,7 +123,7 @@ async def mode_handler(client: Client, message: Message):
     targets = await db.get_user_connections(user_id, "target")
     
     if not sources or not targets:
-        await message.reply_text("❌ पहले source और target connect करें!")
+        await message.reply_text("❌ First connect at least one Source and one Target!")
         return
     
     session = await db.get_session(user_id)
@@ -139,10 +139,10 @@ async def mode_handler(client: Client, message: Message):
 **Available Modes:**
 
 1️⃣ **Intent Forward**
-   - Specific keywords वाले messages forward होंगे
+   - Forward messages with specific keywords
    
 2️⃣ **Forward All**
-   - सभी messages forward होंगे
+   - Forward all messages
 """
     
     keyboard = InlineKeyboardMarkup([

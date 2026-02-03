@@ -15,15 +15,15 @@ from config import BOT_USERNAME
 
 # Welcome message
 WELCOME_TEXT = """
-🤖 **Auto Forwarding Bot में आपका स्वागत है!**
+🤖 **Welcome to Auto Forwarding Bot!**
 
-यह bot आपको messages को एक group/channel से दूसरे में auto-forward करने में मदद करता है।
+This bot helps you auto-forward messages from one group/channel to another.
 
 **🔹 Features:**
-• **Intent Forward** - Specific keywords वाले messages forward करें
-• **Forward All** - सभी messages forward करें
-• Maximum 10 sources और 10 targets connect कर सकते हैं
-• Bot को source और target दोनों में admin होना जरूरी है
+• **Intent Forward** - Forward messages with specific keywords
+• **Forward All** - Forward all messages
+• Connect up to 10 sources and 10 targets
+• Bot must be admin in both source and target chats
 
 **📋 Commands:**
 • /start - Start menu
@@ -33,7 +33,7 @@ WELCOME_TEXT = """
 • /status - Current forwarding status
 • /stop - Stop forwarding
 
-**⚠️ Note:** Bot को group/channel में admin बनाना न भूलें!
+**⚠️ Note:** Don't forget to make the bot admin in groups/channels!
 """
 
 
@@ -61,12 +61,11 @@ async def start_command(client: Client, message: Message):
             )
         ],
         [
-            InlineKeyboardButton("Auto Forward", callback_data="select_mode"),
-            InlineKeyboardButton("Connect Chat", callback_data="connect_chat")
+            InlineKeyboardButton("⚙️ Auto Forward", callback_data="select_mode"),
+            InlineKeyboardButton("🔗 Connect Chat", callback_data="connect_chat")
         ],
         [
-            InlineKeyboardButton("My Connections", callback_data="my_connections"),
-            InlineKeyboardButton("Status", callback_data="status")
+            InlineKeyboardButton("📋 My Connections", callback_data="my_connections")
         ]
     ])
     
@@ -81,7 +80,7 @@ async def start_callback(client: Client, callback_query):
     """Handle start menu callback"""
     try:
         # Clear reply keyboard if any
-        msg = await callback_query.message.reply_text(".", reply_markup=ReplyKeyboardRemove())
+        msg = await callback_query.message.reply_text("\u200b", reply_markup=ReplyKeyboardRemove())
         await msg.delete()
     except:
         pass
@@ -100,12 +99,11 @@ async def start_callback(client: Client, callback_query):
                 )
             ],
         [
-            InlineKeyboardButton("Auto Forward", callback_data="select_mode"),
-            InlineKeyboardButton("Connect Chat", callback_data="connect_chat")
+            InlineKeyboardButton("⚙️ Auto Forward", callback_data="select_mode"),
+            InlineKeyboardButton("🔗 Connect Chat", callback_data="connect_chat")
         ],
         [
-            InlineKeyboardButton("My Connections", callback_data="my_connections"),
-            InlineKeyboardButton("Status", callback_data="status")
+            InlineKeyboardButton("📋 My Connections", callback_data="my_connections")
         ]
         ]),
         disable_web_page_preview=True
@@ -146,12 +144,12 @@ async def connect_chat_callback(client: Client, callback_query):
     text = """
 🔗 **Connect Chat**
 
-नीचे के tiles पर click करें:
+Click on the buttons below:
 
-**👥 Select Group** - Group list खुलेगी
-**📢 Select Channel** - Channel list खुलेगी
+**👥 Select Group** - Opens group picker
+**📢 Select Channel** - Opens channel picker
 
-⚠️ Bot को chat में पहले से member/admin होना जरूरी है!
+⚠️ Bot MUST be admin in the chat!
 """
     
     await callback_query.message.reply_text(text, reply_markup=keyboard)
@@ -193,17 +191,25 @@ async def handle_chat_shared(client: Client, message: Message):
         chat = await client.get_chat(chat_id)
         chat_title = chat.title or "Unknown"
     except Exception as e:
-        await message.reply_text(
-            f"❌ Chat info नहीं मिली: {e}",
-            reply_markup=ReplyKeyboardRemove()
-        )
+        err_str = str(e)
+        if "CHANNEL_INVALID" in err_str:
+             await message.reply_text(
+                "❌ **Error:** Cannot access chat info.\n\n"
+                "👉 **Please make the Bot an Admin in the Channel/Group first!**",
+                reply_markup=ReplyKeyboardRemove()
+            )
+        else:
+            await message.reply_text(
+                f"❌ Error getting chat info: {err_str}",
+                reply_markup=ReplyKeyboardRemove()
+            )
         return
     
     # Check if bot is admin
     is_admin, error = await check_admin_status(client, chat_id)
     if not is_admin:
         msg = await message.reply_text(
-            f"❌ {error}\n\nBot को पहले **{chat_title}** में admin बनाएं!",
+            f"❌ {error}\n\nPlease make Bot **Admin** in **{chat_title}** first!",
             reply_markup=ReplyKeyboardRemove()
         )
         return

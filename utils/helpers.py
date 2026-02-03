@@ -57,12 +57,14 @@ async def get_chat_info(client: Client, chat_id: int):
 def format_chat_list(connections: list) -> str:
     """Format connections list for display"""
     if not connections:
-        return "कोई connection नहीं है"
+        return "No connections found."
     
     text = ""
     for i, conn in enumerate(connections, 1):
-        emoji = "📢" if conn["chat_type"] == "channel" else "👥"
-        text += f"{i}. {emoji} {conn['chat_title']} (`{conn['chat_id']}`)\n"
+        # emoji = "📢" if conn["chat_type"] == "channel" else "👥"
+        # Since we removed source/target distinction in UI, we just show type
+        c_type = "Channel" if conn["chat_type"] == "channel" else "Group"
+        text += f"{i}. **{conn['chat_title']}** (`{conn['chat_id']}`) - {c_type}\n"
     return text
 
 
