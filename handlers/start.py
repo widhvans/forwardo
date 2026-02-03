@@ -1,5 +1,6 @@
 """
 Start Command Handler - Welcome Interface
+Using Pyrogram native RequestChat (for updated version)
 """
 
 from pyrogram import Client, filters
@@ -121,139 +122,168 @@ async def start_callback(client: Client, callback_query):
 
 
 async def connect_chat_callback(client: Client, callback_query):
-    """Show Connect Chat with tiles (text buttons)"""
+    """Show Connect Chat with native picker tiles"""
     
-    # Using simple text buttons since RequestChat is not supported in this pyrogram version
+    # Using KeyboardButton.RequestChat (requires Pyrogram v2.1+)
+    try:
+        keyboard = ReplyKeyboardMarkup(
+            [
+                [
+                    KeyboardButton(
+                        text="👥 Select Group",
+                        request_chat=KeyboardButton.RequestChat(
+                            request_id=1,
+                            chat_is_channel=False,
+                            bot_is_member=True
+                        )
+                    ),
+                    KeyboardButton(
+                        text="📢 Select Channel",
+                        request_chat=KeyboardButton.RequestChat(
+                            request_id=2,
+                            chat_is_channel=True,
+                            bot_is_member=True
+                        )
+                    )
+                ],
+                [KeyboardButton("❌ Cancel")]
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=True
+        )
+        
+        text = """
+🔗 **Connect Chat**
+
+नीचे के tiles पर click करें और list से chat select करें:
+
+**👥 Select Group** - Group picker (Choose a Group)
+**📢 Select Channel** - Channel picker (Choose a Channel)
+
+⚠️ **Note:** Bot ko pehle chat me add/admin banana zaroori hai!
+"""
+        await callback_query.message.reply_text(text, reply_markup=keyboard)
+        
+    except Exception as e:
+        # Fallback for older pyrogram if upgrade failed
+        await callback_query.message.reply_text(
+            f"❌ Error: {e}\nFalling back to text buttons...",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        # Use simpler text buttons
+        await tile_fallback(client, callback_query)
+
+    await callback_query.answer()
+
+
+async def tile_fallback(client: Client, callback_query):
+    """Fallback text buttons if native picker fails"""
     keyboard = ReplyKeyboardMarkup(
         [
-            [
-                KeyboardButton("👥 Select Group"),
-                KeyboardButton("📢 Select Channel")
-            ],
+            [KeyboardButton("👥 Select Group (Text)"), KeyboardButton("📢 Select Channel (Text)")],
             [KeyboardButton("❌ Cancel")]
         ],
         resize_keyboard=True,
         one_time_keyboard=True
     )
-    
-    text = """
-🔗 **Connect Chat**
+    await callback_query.message.reply_text(
+        "Select Type (Text Callback):",
+        reply_markup=keyboard
+    )
 
-नीचे के tiles से चुनें:
-• **👥 Select Group**
-• **📢 Select Channel**
-"""
+
+async def handle_chat_shared(client: Client, message: Message):
+    """Handle when user selects a chat from native picker"""
+    from utils.helpers import check_admin_status
     
-    await callback_query.message.reply_text(text, reply_markup=keyboard)
-    await callback_query.answer()
+    user_id = message.from_user.id
+    
+    # Get shared chat info (updated attr names for recent pyrogram)
+    chat_shared = getattr(message, "chat_shared", None) or getattr(message, "user_shared", None)
+    
+    if chat_shared:
+        chat_id = chat_shared.chat_id
+        # request_id sent in the button
+        request_id = getattr(chat_shared, "request_id", 0) 
+        
+        # Get chat details
+        try:
+            chat = await client.get_chat(chat_id)
+            chat_title = chat.title or "Unknown"
+        except Exception as e:
+            await message.reply_text(
+                f"❌ Chat info नहीं मिली: {e}",
+                reply_markup=ReplyKeyboardRemove()
+            )
+            return
+        
+        # Check if bot is admin
+        is_admin, error = await check_admin_status(client, chat_id)
+        if not is_admin:
+            await message.reply_text(
+                f"❌ {error}\n\nBot को पहले **{chat_title}** में admin बनाएं!",
+                reply_markup=ReplyKeyboardRemove()
+            )
+            return
+        
+        # Ask source or target
+        await message.reply_text(
+            f"✅ **Chat Selected!**\n\n"
+            f"**{chat_title}**\n"
+            f"🆔 `{chat_id}`\n\n"
+            f"इसे किस तरह connect करना है?",
+            reply_markup=InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("📤 As Source", callback_data=f"add_source_{chat_id}"),
+                    InlineKeyboardButton("📥 As Target", callback_data=f"add_target_{chat_id}")
+                ],
+                [InlineKeyboardButton("❌ Cancel", callback_data="start_menu")]
+            ])
+        )
+        
+        # Remove reply keyboard
+        await message.reply_text("⬆️", reply_markup=ReplyKeyboardRemove())
 
 
 async def handle_tile_button(client: Client, message: Message):
-    """Handle when user clicks Group or Channel text button"""
-    from handlers.connect import user_states
-    
-    user_id = message.from_user.id
+    """Fallback handler for text buttons"""
     text = message.text
-    
     if "Group" in text:
-        user_states[user_id] = {
-            "action": "connect_source",
-            "chat_type": "group"
-        }
-        
-        await message.reply_text(
-            "👥 **Connect Group**\n\n"
-            "अब उस **Group** का कोई message forward करें।\n\n"
-            "⚠️ Bot को group में admin होना जरूरी है!",
-            reply_markup=InlineKeyboardMarkup([
-                [
-                    InlineKeyboardButton("📤 As Source", callback_data="tile_source_group"),
-                    InlineKeyboardButton("📥 As Target", callback_data="tile_target_group")
-                ],
-                [InlineKeyboardButton("❌ Cancel", callback_data="cancel_tile")]
-            ])
-        )
-    
+        chat_type = "group"
     elif "Channel" in text:
-        user_states[user_id] = {
-            "action": "connect_source",
-            "chat_type": "channel"
-        }
-        
-        await message.reply_text(
-            "📢 **Connect Channel**\n\n"
-            "अब उस **Channel** का कोई message forward करें।\n\n"
-            "⚠️ Bot को channel में admin होना जरूरी है!",
-            reply_markup=InlineKeyboardMarkup([
-                [
-                    InlineKeyboardButton("📤 As Source", callback_data="tile_source_channel"),
-                    InlineKeyboardButton("📥 As Target", callback_data="tile_target_channel")
-                ],
-                [InlineKeyboardButton("❌ Cancel", callback_data="cancel_tile")]
-            ])
-        )
+        chat_type = "channel"
+    else:
+        return
 
-
-async def tile_source_callback(client: Client, callback_query):
-    """Set connection type to Source"""
     from handlers.connect import user_states
+    user_id = message.from_user.id
+    user_states[user_id] = {"action": "connect_source", "chat_type": chat_type}
     
-    user_id = callback_query.from_user.id
-    data = callback_query.data
-    chat_type = "group" if "group" in data else "channel"
-    
-    user_states[user_id] = {
-        "action": "connect_source",
-        "chat_type": chat_type
-    }
-    
-    await callback_query.message.edit_text(
-        f"📤 **Source {chat_type.title()} Connect**\n\n"
-        f"अब उस {chat_type} का कोई message **forward** करें।"
-    )
-    await callback_query.answer("✅ Source mode selected")
-
-
-async def tile_target_callback(client: Client, callback_query):
-    """Set connection type to Target"""
-    from handlers.connect import user_states
-    
-    user_id = callback_query.from_user.id
-    data = callback_query.data
-    chat_type = "group" if "group" in data else "channel"
-    
-    user_states[user_id] = {
-        "action": "connect_target",
-        "chat_type": chat_type
-    }
-    
-    await callback_query.message.edit_text(
-        f"📥 **Target {chat_type.title()} Connect**\n\n"
-        f"अब उस {chat_type} का कोई message **forward** करें।"
-    )
-    await callback_query.answer("✅ Target mode selected")
-
-
-async def cancel_tile_callback(client: Client, callback_query):
-    """Cancel tile selection"""
-    from handlers.connect import user_states
-    
-    user_id = callback_query.from_user.id
-    if user_id in user_states:
-        del user_states[user_id]
-    
-    await callback_query.message.edit_text("❌ Cancelled!")
-    await callback_query.message.reply_text(
-        "🔙",
+    await message.reply_text(
+        f"**Connect {chat_type.title()}**\n\nForward message now.",
         reply_markup=ReplyKeyboardRemove()
     )
-    await callback_query.answer()
 
 
-# Compatibility / Placeholders
+# Callbacks for add_source / add_target from picker flow
+async def add_source_callback(client: Client, callback_query):
+    user_id = callback_query.from_user.id
+    chat_id = int(callback_query.data.replace("add_source_", ""))
+    from handlers.connect import quick_connect_internal
+    await quick_connect_internal(client, callback_query, chat_id, "source")
+
+async def add_target_callback(client: Client, callback_query):
+    user_id = callback_query.from_user.id
+    chat_id = int(callback_query.data.replace("add_target_", ""))
+    from handlers.connect import quick_connect_internal
+    await quick_connect_internal(client, callback_query, chat_id, "target")
+
+
+# Placeholders for old callbacks to prevent errors if clicked
 async def pick_group_callback(client, callback_query): pass
 async def pick_channel_callback(client, callback_query): pass
+async def tile_source_callback(client, callback_query): pass
+async def tile_target_callback(client, callback_query): pass
+async def cancel_tile_callback(client, callback_query): 
+    await callback_query.message.reply_text("Cancelled", reply_markup=ReplyKeyboardRemove())
 async def handle_peer_selected(client, message): pass
-async def handle_chat_shared(client, message): pass
-async def add_source_callback(client, callback_query): pass
-async def add_target_callback(client, callback_query): pass

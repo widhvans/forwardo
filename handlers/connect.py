@@ -365,17 +365,9 @@ async def connect_in_chat(client: Client, message: Message):
     )
 
 
-async def quick_connect_callback(client: Client, callback_query: CallbackQuery):
-    """Quick connect from within a chat"""
+async def quick_connect_internal(client: Client, callback_query: CallbackQuery, chat_id: int, connection_type: str):
+    """Shared internal logic for adding connection"""
     user_id = callback_query.from_user.id
-    data = callback_query.data
-    
-    if data.startswith("quick_source_"):
-        chat_id = int(data.replace("quick_source_", ""))
-        connection_type = "source"
-    else:
-        chat_id = int(data.replace("quick_target_", ""))
-        connection_type = "target"
     
     chat_info, error = await get_chat_info(client, chat_id)
     if not chat_info:
@@ -392,9 +384,37 @@ async def quick_connect_callback(client: Client, callback_query: CallbackQuery):
     
     if success:
         await callback_query.answer(f"✅ Connected as {connection_type}!", show_alert=True)
-        await callback_query.message.edit_text(
-            f"✅ **Connected Successfully!**\n\n"
-            f"**{chat_info['title']}** added as {connection_type}."
-        )
+        
+        # Check if we should edit text or reply based on context
+        try:
+            await callback_query.message.edit_text(
+                f"✅ **Connected Successfully!**\n\n"
+                f"**{chat_info['title']}** added as {connection_type}.",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔙 Main Menu", callback_data="start_menu")]
+                ])
+            )
+        except:
+             await callback_query.message.reply_text(
+                f"✅ **Connected Successfully!**\n\n"
+                f"**{chat_info['title']}** added as {connection_type}.",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔙 Main Menu", callback_data="start_menu")]
+                ])
+            )
     else:
         await callback_query.answer(f"❌ {msg}", show_alert=True)
+
+
+async def quick_connect_callback(client: Client, callback_query: CallbackQuery):
+    """Quick connect from within a chat"""
+    data = callback_query.data
+    
+    if data.startswith("quick_source_"):
+        chat_id = int(data.replace("quick_source_", ""))
+        connection_type = "source"
+    else:
+        chat_id = int(data.replace("quick_target_", ""))
+        connection_type = "target"
+        
+    await quick_connect_internal(client, callback_query, chat_id, connection_type)
