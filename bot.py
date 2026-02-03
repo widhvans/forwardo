@@ -203,7 +203,7 @@ async def status_handler(client: Client, message: Message):
 
 # ==================== Text Message Handler ====================
 
-@app.on_message(filters.private & filters.text & ~filters.command(["start", "stop", "stats", "broadcast", "users", "connect", "myconnections", "mode", "status"]))
+@app.on_message(filters.private & filters.text & ~filters.forwarded & ~filters.command(["start", "stop", "stats", "broadcast", "users", "connect", "myconnections", "mode", "status"]))
 async def text_message_handler(client: Client, message: Message):
     """Handle text messages for keywords input and tile buttons"""
     user_id = message.from_user.id
