@@ -289,8 +289,13 @@ async def main():
     print("Press Ctrl+C to stop the bot.")
     
     # Keep the bot running
-    await app.idle()
+    from pyrogram import idle
+    await idle()
+    
+    # Stop the bot gracefully
+    await app.stop()
 
 
 if __name__ == "__main__":
-    app.run(main())
+    import asyncio
+    asyncio.get_event_loop().run_until_complete(main())
