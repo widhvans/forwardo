@@ -327,6 +327,14 @@ async def connect_in_chat(client: Client, message: Message):
         await message.reply_text("यह command groups/channels में use करें!")
         return
     
+    # In channels, from_user can be None
+    if user is None:
+        await message.reply_text(
+            "❌ Channel में directly /connect use नहीं कर सकते।\n\n"
+            "Bot के PM में जाएं और channel का message forward करें।"
+        )
+        return
+    
     # Check if user is admin
     is_admin, error = await check_admin_status(client, chat.id, user.id)
     if not is_admin:
