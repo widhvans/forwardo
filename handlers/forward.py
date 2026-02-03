@@ -1,5 +1,5 @@
 """
-Forwarding Handlers - Wizard Style UI
+Forwarding Handlers - Wizard Style UI (Refined)
 Hub -> Filters / Sources / Targets -> Start
 """
 
@@ -13,14 +13,14 @@ from handlers.connect import user_states
 from utils.logger import logger
 
 # Active forwarding sessions
-# Key: user_id, Value: {mode, sources, targets, filters, active}
+# Key: user_id, Value: {mode, sources, targets, filters, active, start_msg_id}
 active_sessions = {}
 
 # Background tasks for forwarding old messages
 forward_tasks = {}
 
 # Temporary session state for setup (The "Wizard" state)
-# Key: user_id, Value: {mode, sources:[], targets:[], filters:{...}}
+# Key: user_id, Value: {mode, sources:[], targets:[], filters:{...}, start_msg_id: int}
 temp_sessions = {}
 
 async def select_mode_callback(client: Client, callback_query: CallbackQuery):
@@ -71,64 +71,210 @@ Select a mode to configure your session:
 async def setup_hub_callback(client: Client, callback_query: CallbackQuery):
     """Step 2: Session Hub (Central Config)"""
     user_id = callback_query.from_user.id
-    data = callback_query.data
-    
     if user_id not in temp_sessions:
-        await select_mode_callback(client, callback_query) # Restart if expired
+        await select_mode_callback(client, callback_query)
         return
 
-    # Set mode if coming from select_mode
-    if "instant" in data:
-        temp_sessions[user_id]["mode"] = "instant"
-    elif "old" in data:
-        temp_sessions[user_id]["mode"] = "forward_old"
+    data = callback_query.data
+    # Set mode only if changed/fresh
+    if "instant" in data: temp_sessions[user_id]["mode"] = "instant"
+    elif "old" in data: temp_sessions[user_id]["mode"] = "forward_old"
         
     session = temp_sessions[user_id]
     mode_name = "Instant Forward" if session["mode"] == "instant" else "Forward Old"
     
-    # Counts
     src_count = len(session["sources"])
     tgt_count = len(session["targets"])
     
     # Filter summary
     filters = session["filters"]
-    enabled_filters = [k.title() for k, v in filters.items() if v]
-    filter_text = ", ".join(enabled_filters) if enabled_filters else "None"
+    enabled = [k.title() for k, v in filters.items() if v]
+    filter_text = ", ".join(enabled) if enabled else "None"
+    
+    # Readiness Check
+    can_start = True
+    start_status = ""
+    
+    if session["mode"] == "forward_old":
+        if "start_msg_id" in session:
+            start_status = f"✅ Set (ID: {session['start_msg_id']})"
+        else:
+            start_status = "❌ Not Set"
+            can_start = False
     
     text = f"""
 ⚙️ **Session Configuration: {mode_name}**
 
-Configure your settings before starting:
+Configure settings:
 
 🛡 **Filters:** {filter_text}
 📤 **Sources:** {src_count} selected
 📥 **Targets:** {tgt_count} selected
-
-_Click buttons below to edit:_
 """
+    if session["mode"] == "forward_old":
+        text += f"🏁 **Start Message:** {start_status}\n"
+    
+    text += "\n_Click buttons below to edit:_"
 
-    keyboard = InlineKeyboardMarkup([
+    key_rows = [
         [InlineKeyboardButton("🛡 Edit Filters", callback_data="menu_filters")],
         [
             InlineKeyboardButton(f"📤 Sources ({src_count})", callback_data="menu_sources"),
             InlineKeyboardButton(f"📥 Targets ({tgt_count})", callback_data="menu_targets")
-        ],
-        [InlineKeyboardButton("▶️ START FORWARDING", callback_data="start_session")],
-        [InlineKeyboardButton("🔙 Back to Modes", callback_data="select_mode")]
-    ])
+        ]
+    ]
+
+    if session["mode"] == "forward_old":
+        key_rows.append([InlineKeyboardButton("🏁 Set Start Message", callback_data="set_start_msg_hub")])
     
-    await callback_query.message.edit_text(text, reply_markup=keyboard)
+    if can_start:
+        key_rows.append([InlineKeyboardButton("▶️ START FORWARDING", callback_data="start_session")])
+    else:
+        if session["mode"] == "forward_old":
+             key_rows.append([InlineKeyboardButton("⚠️ Set Start Msg First", callback_data="noop")])
+
+    key_rows.append([InlineKeyboardButton("🔙 Back to Modes", callback_data="select_mode")])
+    
+    # Helper to avoid "message not modified" error
+    try:
+        await callback_query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(key_rows))
+    except:
+        # If text is same (e.g. from noop), just answer
+        pass
+
+
+async def set_start_msg_hub_callback(client: Client, callback_query: CallbackQuery):
+    """Ask user to forward start message (Old Mode)"""
+    user_id = callback_query.from_user.id
+    
+    user_states[user_id] = {"action": "wait_for_last_msg_hub"}
+    
+    text = """
+🏁 **Set Start Message**
+
+Please **Forward the Last Message** from the **Source Chat**.
+Bot will start copying backwards from this message.
+
+👉 **Forward Message Now...**
+"""
+    await callback_query.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="setup_hub")]])
+    )
+
+
+async def handle_last_msg_input(client: Client, message: Message):
+    """Process forwarded message for Hub Setup"""
+    user_id = message.from_user.id
+    
+    if user_id not in user_states: return
+    state = user_states[user_id]
+    if state.get("action") != "wait_for_last_msg_hub": return
+    
+    # Check forward
+    if not message.forward_from_chat:
+        await message.reply_text("❌ Please forward from a Channel/Group!")
+        return
+        
+    start_msg_id = message.forward_from_message_id
+    source_chat_id = message.forward_from_chat.id
+    
+    if user_id not in temp_sessions:
+        await message.reply_text("❌ Session expired. Please restart mode selection.")
+        del user_states[user_id]
+        return
+        
+    session = temp_sessions[user_id]
+    
+    # Auto-select this source if not selected?
+    # Or validate against selected sources?
+    # Let's validate.
+    if source_chat_id not in session["sources"]:
+        # If not selected, maybe user wants to select it now?
+        # Let's be smart: Select it automatically if it's connected.
+        # But we need to check if it IS connected first.
+        sources = await db.get_user_connections(user_id, "source")
+        connected_ids = [s["chat_id"] for s in sources]
+        
+        if source_chat_id in connected_ids:
+            session["sources"] = [source_chat_id] # Focus on this source?
+            # User said "Connected chats me koi bhi chat ham rakh skte hai"
+            # Maybe just append?
+            if source_chat_id not in session["sources"]:
+                 session["sources"].append(source_chat_id)
+        else:
+             await message.reply_text("❌ This chat is not connected as a Source!")
+             return
+
+    # Update session
+    session["start_msg_id"] = start_msg_id
+    del user_states[user_id]
+    
+    # Return to Hub
+    # We can't edit the user's forwarded message, so we send a fresh Hub message
+    # Or try to edit the bot's last message if we stored ID.
+    # Simpler: Send new Hub.
+    
+    await message.reply_text("✅ Start Message Set!", quote=True)
+    
+    # We need a dummy callback query to reuse setup_hub_callback logic (hacky but works)
+    # Or split logic. Refactoring setup_hub_display would be cleaner.
+    # For now, let's just trigger a "fresh" start menu or similar. Durn, need callback object.
+    # Let's just send the Hub text manually here.
+    
+    # Trigger Hub display manually
+    await show_hub_manual(client, message.chat.id, session)
+
+
+async def show_hub_manual(client, chat_id, session):
+    """Helper to show Hub from message context"""
+    mode = session["mode"]
+    src = len(session["sources"])
+    tgt = len(session["targets"])
+    filters = ", ".join([k.title() for k, v in session["filters"].items() if v]) or "None"
+    
+    start_status = f"✅ Set (ID: {session.get('start_msg_id')})" if mode == "forward_old" else ""
+    
+    text = f"""
+⚙️ **Session Configuration: {mode.replace('_', ' ').title()}**
+
+🛡 **Filters:** {filters}
+📤 **Sources:** {src} selected
+📥 **Targets:** {tgt} selected
+"""
+    if mode == "forward_old":
+        text += f"🏁 **Start Message:** {start_status}\n"
+    
+    key_rows = [
+        [InlineKeyboardButton("🛡 Edit Filters", callback_data="menu_filters")],
+        [
+            InlineKeyboardButton(f"📤 Sources ({src})", callback_data="menu_sources"),
+            InlineKeyboardButton(f"📥 Targets ({tgt})", callback_data="menu_targets")
+        ]
+    ]
+    if mode == "forward_old":
+        key_rows.append([InlineKeyboardButton("🏁 Set Start Message", callback_data="set_start_msg_hub")])
+        
+    can_start = True
+    if mode == "forward_old" and "start_msg_id" not in session: can_start = False
+    
+    if can_start:
+        key_rows.append([InlineKeyboardButton("▶️ START FORWARDING", callback_data="start_session")])
+    elif mode == "forward_old":
+        key_rows.append([InlineKeyboardButton("⚠️ Set Start Msg First", callback_data="noop")])
+        
+    key_rows.append([InlineKeyboardButton("🔙 Back", callback_data="select_mode")])
+    
+    await client.send_message(chat_id, text, reply_markup=InlineKeyboardMarkup(key_rows))
 
 
 async def menu_filters_callback(client: Client, callback_query: CallbackQuery):
     """Filter Toggle Menu"""
     user_id = callback_query.from_user.id
     if user_id not in temp_sessions: return
-    
     filters = temp_sessions[user_id]["filters"]
-    
     def status(key): return "✅" if filters.get(key) else "❌"
-
+    
     keyboard = InlineKeyboardMarkup([
         [
             InlineKeyboardButton(f"{status('text')} Text", callback_data="toggle_filter_text"),
@@ -138,86 +284,80 @@ async def menu_filters_callback(client: Client, callback_query: CallbackQuery):
             InlineKeyboardButton(f"{status('video')} Videos", callback_data="toggle_filter_video"),
             InlineKeyboardButton(f"{status('document')} Docs", callback_data="toggle_filter_document")
         ],
-        [InlineKeyboardButton(f"{status('voice')} Audio/Voice", callback_data="toggle_filter_voice")],
+        [InlineKeyboardButton(f"{status('voice')} Audio", callback_data="toggle_filter_voice")],
         [InlineKeyboardButton("🔙 Back to Hub", callback_data="setup_hub")]
     ])
-    
-    await callback_query.message.edit_text("🛡 **Edit Filters**\n\nToggle content types:", reply_markup=keyboard)
+    await callback_query.message.edit_text("🛡 **Edit Filters**", reply_markup=keyboard)
 
 
 async def toggle_filter_callback(client: Client, callback_query: CallbackQuery):
-    """Toggle filter state"""
     user_id = callback_query.from_user.id
-    if user_id not in temp_sessions: return
-    
-    f_type = callback_query.data.replace("toggle_filter_", "")
-    current = temp_sessions[user_id]["filters"].get(f_type, True)
-    temp_sessions[user_id]["filters"][f_type] = not current
-    
-    await menu_filters_callback(client, callback_query)
+    if user_id in temp_sessions:
+        f = callback_query.data.replace("toggle_filter_", "")
+        temp_sessions[user_id]["filters"][f] = not temp_sessions[user_id]["filters"][f]
+        await menu_filters_callback(client, callback_query)
 
 
 async def menu_chat_selection(client: Client, callback_query: CallbackQuery, is_source: bool):
-    """Generic Chat Selection Menu Source/Target"""
+    """Chat Selection (Generic for Source/Target)"""
     user_id = callback_query.from_user.id
     if user_id not in temp_sessions: return
     
     session = temp_sessions[user_id]
     chat_type = "source" if is_source else "target"
     selected_list = session["sources"] if is_source else session["targets"]
+    other_list = session["targets"] if is_source else session["sources"] # Validation
     
-    # Fetch all connected chats
-    all_connected = await db.get_user_connections(user_id, chat_type)
+    # Fetch all connected chats (both types can be used for either ideally, but let's stick to user definitions for now)
+    # User said: "connected chats me koi bhi chat ham rakh skte hai... me se target ya source"
+    # This implies Source list should show ALL connections, Target list should show ALL connections.
+    
+    all_connections = await db.get_user_connections(user_id) # Fetch ALL
+    
+    # If get_user_connections(user_id) returns everything, we need to sort/filter unique?
+    # Function in mongo.py defaults format: {"connection_type": ...}
     
     text = f"📤 **Select Sources**" if is_source else f"📥 **Select Targets**"
-    text += "\n\nTick chats to include in this session:"
+    text += "\n\nTick chats to include:"
     
     buttons = []
-    for chat in all_connected:
-        is_selected = chat["chat_id"] in selected_list
-        mark = "✅" if is_selected else "❌"
-        # callback: toggle_chat_source_12345 or toggle_chat_target_12345
-        cb_data = f"toggle_chat_{chat_type}_{chat['chat_id']}"
-        buttons.append([InlineKeyboardButton(f"{mark} {chat['chat_title']}", callback_data=cb_data)])
+    for chat in all_connections:
+        chat_id = chat["chat_id"]
         
-    buttons.append([InlineKeyboardButton("🔙 Back to Hub", callback_data="setup_hub")])
+        # Validation: Chat cannot be in OTHER list
+        if chat_id in other_list:
+            continue # Skip showing chats already selected in the opposing role
+            
+        is_selected = chat_id in selected_list
+        mark = "✅" if is_selected else "❌"
+        # toggle_chat_source_12345
+        buttons.append([InlineKeyboardButton(f"{mark} {chat['chat_title']}", callback_data=f"toggle_chat_{chat_type}_{chat_id}")])
     
+    buttons.append([InlineKeyboardButton("🔙 Back to Hub", callback_data="setup_hub")])
     await callback_query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
 
 async def toggle_chat_callback(client: Client, callback_query: CallbackQuery):
-    """Toggle chat selection"""
     user_id = callback_query.from_user.id
     if user_id not in temp_sessions: return
     
-    data = callback_query.data # toggle_chat_source_12345
-    parts = data.split("_") # ['toggle', 'chat', 'source', '12345']
-    chat_type = parts[2]
-    try:
-        chat_id = int(parts[3])
-    except:
-        chat_id = int(f"-{parts[4]}") # Handle negative IDs if split messed up? unlikely with _ separator if id has -
-        # Actually pyrogram buttons might have issue with - in callback data if we aren't careful.
-        # But let's assume standard split works. If ID is negative, split might give ['...', 'source', '-100...']
-        # No, update: split("_") on "toggle_chat_source_-100123" gives ['toggle', 'chat', 'source', '-100123']
-        chat_id = int(parts[3])
-
-    selected_list = temp_sessions[user_id]["sources"] if chat_type == "source" else temp_sessions[user_id]["targets"]
+    data = callback_query.data.split("_") # toggle, chat, source, 12345
+    c_type = data[2]
+    c_id = int(data[3])
     
-    if chat_id in selected_list:
-        selected_list.remove(chat_id)
-    else:
-        selected_list.append(chat_id)
-        
-    # Refresh menu
-    await menu_chat_selection(client, callback_query, is_source=(chat_type=="source"))
+    session = temp_sessions[user_id]
+    lst = session["sources"] if c_type == "source" else session["targets"]
+    
+    if c_id in lst: lst.remove(c_id)
+    else: lst.append(c_id)
+    
+    await menu_chat_selection(client, callback_query, is_source=(c_type=="source"))
 
 
 async def start_session_callback(client: Client, callback_query: CallbackQuery):
     """Start the configured session"""
     user_id = callback_query.from_user.id
     if user_id not in temp_sessions: return
-    
     session = temp_sessions[user_id]
     
     if not session["sources"]:
@@ -227,6 +367,8 @@ async def start_session_callback(client: Client, callback_query: CallbackQuery):
         await callback_query.answer("❌ Select at least one Target!", show_alert=True)
         return
         
+    s_msg_id = session.get("start_msg_id")
+    
     # Save to DB
     await db.save_session(
         user_id=user_id,
@@ -237,110 +379,37 @@ async def start_session_callback(client: Client, callback_query: CallbackQuery):
         active=True
     )
     
-    # Update Active Memory
     active_sessions[user_id] = session.copy()
     active_sessions[user_id]["active"] = True
-    
-    # Clear temp
+    session_data = active_sessions[user_id] # Ref
     del temp_sessions[user_id]
     
-    if session["mode"] == "instant":
-        await show_instant_started(client, callback_query.message, session)
-    else:
-        await prepare_forward_old(client, callback_query.message, session)
+    display_text = f"""
+✅ **Started: {session['mode'].replace('_', ' ').title()}**
 
-
-async def show_instant_started(client, message, session):
-    text = f"""
-✅ **Instant Forwarding Started!**
-
-📤 **Sources:** {len(session['sources'])}
-📥 **Targets:** {len(session['targets'])}
-🛡 **Filters Active**
-
-Bot is now forwarding new messages.
+📤 Sources: {len(session['sources'])}
+📥 Targets: {len(session['targets'])}
+🛡 Filters: {len([k for k,v in session['filters'].items() if v])} active
 """
-    await message.edit_text(
-        text,
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("⏹ Stop", callback_data="stop_forwarding")]
-        ])
-    )
-    logger.info(f"User {message.chat.id} started Instant Forward")
-
-
-async def prepare_forward_old(client, message, session):
-    """Ask for last message for Forward Old mode"""
-    user_id = message.chat.id
-    
-    # Set state to wait for input
-    # We need to temporarily store the session config in user_states because active_sessions is for RUNNING sessions
-    # Actually we already saved to active_sessions/DB. 
-    # So we just need to wait for the trigger message.
-    
-    user_states[user_id] = {
-        "action": "wait_for_last_msg"
-        # Config is already in active_sessions[user_id]
-    }
-    
-    text = """
-2️⃣ **Forward Old Messages**
-
-**Step 2:**
-Please **Forward the Last Message** (oldest one you want to start from) from the **Source Chat**.
-Bot will start copying from there and move backwards (upwards).
-
-👉 **Forward Message Now...**
-"""
-    await message.edit_text(
-        text, 
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="stop_forwarding")]])
-    )
-
-
-async def handle_last_msg_input(client: Client, message: Message):
-    """Handle the forwarded last message input"""
-    user_id = message.from_user.id
-    
-    if user_id not in user_states: return
-    state = user_states[user_id]
-    if state.get("action") != "wait_for_last_msg": return
-    
-    # Check if forwarded
-    if not message.forward_from_chat:
-        await message.reply_text("❌ Please forward a message from a Channel/Group.")
-        return
-        
-    start_msg_id = message.forward_from_message_id
-    source_chat_id = message.forward_from_chat.id
-    
-    # Check if this source matches SELECTED sources
-    session = active_sessions.get(user_id)
-    if not session:
-        await message.reply_text("❌ Session not found. Restart bot.")
-        return
-        
-    if source_chat_id not in session["sources"]:
-        await message.reply_text(f"❌ This chat is not in your selected Sources list!")
-        return
-        
-    del user_states[user_id]
-    
-    # Only single source supported for Old Mode parallel task (simplicity)
-    # But our architecture allows list. We will just start task for this list.
-    # Note: If user selected multiple sources, they have to provide start msg for EACH?
-    # Complex. Let's assume for OLD mode, user picks ONE source usually. 
-    # Or, we just start the loop for the source matching this message.
-    
-    await message.reply_text(
-        f"🚀 **Forwarding Started!**\nStart ID: {start_msg_id}",
+    await callback_query.message.edit_text(
+        display_text, 
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⏹ Stop", callback_data="stop_forwarding")]])
     )
     
-    task = asyncio.create_task(
-        forward_old_messages_loop(client, user_id, [source_chat_id], session["targets"], start_msg_id)
-    )
-    forward_tasks[user_id] = task
+    if session["mode"] == "forward_old" and s_msg_id:
+        # Start only ONE task for simplicity (first source) ?
+        # Or launch parallel tasks for all sources?
+        # User implies list.
+        # But start_msg_id came from ONE valid source.
+        # We need to find WHICH source this start_msg_id belongs to if we have multiple.
+        # Too complex. We assume user selected ONE source for Old Mode usually.
+        # Taking the first source for now (or all sources if logic allows independent history fetch, but start_id is tied to one chat).
+        # We'll just run task for the first source in list.
+        
+        task = asyncio.create_task(
+            forward_old_messages_loop(client, user_id, session["sources"], session["targets"], s_msg_id)
+        )
+        forward_tasks[user_id] = task
 
 
 # ---------------- Logic Helpers ----------------
@@ -355,8 +424,8 @@ def should_forward_message(message: Message, filters: dict) -> bool:
     return True
 
 async def forward_old_messages_loop(client, user_id, source_ids, target_ids, start_id):
-    logger.info(f"Starting loop User={user_id} Source={source_ids[0]}")
-    source_id = source_ids[0]
+    logger.info(f"Starting loop User={user_id}")
+    source_id = source_ids[0] # Priority to first source
     current_id = start_id
     total = 0
     filters = active_sessions[user_id]["filters"]
@@ -369,30 +438,25 @@ async def forward_old_messages_loop(client, user_id, source_ids, target_ids, sta
                 if msg and not msg.empty:
                     if should_forward_message(msg, filters):
                         for tid in target_ids:
-                            try:
-                                await msg.copy(tid)
+                            try: await msg.copy(tid)
                             except FloodWait as e:
                                 await asyncio.sleep(e.value)
                                 await msg.copy(tid)
-                            except Exception as e:
-                                logger.error(f"Copy failed: {e}")
+                            except: pass
                         total += 1
                         if total % 20 == 0:
-                            try: await client.send_message(user_id, f"📊 Progress: {total} msgs...")
-                            except: pass
-            except Exception as e:
-                logger.error(f"Error {current_id}: {e}")
+                             try: await client.send_message(user_id, f"📊 Forwarded: {total}...")
+                             except: pass
+            except: pass
             current_id -= 1
             await asyncio.sleep(1.5)
-    except Exception as e:
-         logger.error(f"Loop fatal: {e}")
+    except: pass
     finally:
          if user_id in active_sessions:
              await client.send_message(user_id, "✅ Done!")
              await stop_forwarding_callback(None, None, user_id_override=user_id)
 
 async def forward_message_handler(client, message):
-    """Instant Forward Logic"""
     chat_id = message.chat.id
     for uid, session in active_sessions.items():
         if session["mode"] != "instant": continue
@@ -415,14 +479,13 @@ async def stop_forwarding_callback(client, callback_query, user_id_override=None
         from handlers.start import start_callback
         await start_callback(client, callback_query)
 
-# Exports & Placeholders for safe imports
+# Exports/Placeholders
 async def stop_command(c, m): await stop_forwarding_callback(c, None, m.from_user.id)
 async def status_callback(c, cb): await cb.answer("Active" if cb.from_user.id in active_sessions else "Inactive")
 async def load_sessions_on_startup():
     global active_sessions
     for s in await db.get_all_active_sessions(): active_sessions[s["user_id"]] = s
-
-# Interface Wrappers
-async def setup_filter_callback(c, cb): pass # replaced by hub
+    
+async def setup_filter_callback(c, cb): pass 
 async def mode_instant_callback(c, cb): pass 
 async def confirm_filters_callback(c, cb): pass

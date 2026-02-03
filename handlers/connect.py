@@ -389,7 +389,8 @@ async def quick_connect_internal(client: Client, callback_query: CallbackQuery, 
         try:
             await callback_query.message.edit_text(
                 f"✅ **Connected Successfully!**\n\n"
-                f"**{chat_info['title']}** added as {connection_type}.",
+                f"**{chat_info['title']}** added as {connection_type}.\n"
+                f"You can now select this in the start menu.",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("🔙 Main Menu", callback_data="start_menu")]
                 ])
@@ -397,7 +398,8 @@ async def quick_connect_internal(client: Client, callback_query: CallbackQuery, 
         except:
              await callback_query.message.reply_text(
                 f"✅ **Connected Successfully!**\n\n"
-                f"**{chat_info['title']}** added as {connection_type}.",
+                f"**{chat_info['title']}** added as {connection_type}.\n"
+                f"You can now select this in the start menu.",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("🔙 Main Menu", callback_data="start_menu")]
                 ])

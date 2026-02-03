@@ -42,7 +42,7 @@ from handlers.forward import (
     start_session_callback, stop_forwarding_callback, 
     status_callback, forward_message_handler, 
     load_sessions_on_startup, stop_command,
-    handle_last_msg_input
+    handle_last_msg_input, set_start_msg_hub_callback
 )
 from handlers.admin import stats_command, broadcast_command, users_command
 
@@ -319,6 +319,9 @@ async def callback_handler(client: Client, callback_query: CallbackQuery):
     # Wizard/Hub Handlers
     elif data.startswith("setup_hub_") or data == "setup_hub":
         await setup_hub_callback(client, callback_query)
+        
+    elif data == "set_start_msg_hub":
+        await set_start_msg_hub_callback(client, callback_query)
         
     elif data.startswith("menu_"): # menu_filters, menu_sources, menu_targets
         if "filters" in data:

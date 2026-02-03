@@ -109,10 +109,10 @@ class Database:
     # ==================== Session Operations ====================
     
     async def save_session(self, user_id: int, mode: str, sources: list, 
-                          targets: list, keywords: list = None, active: bool = True):
+                          targets: list, keywords: list = None, filters: dict = None, active: bool = True):
         """
         Save forwarding session
-        mode: 'intent' or 'forward_all'
+        mode: 'instant' or 'forward_old'
         """
         # Delete existing session
         await self.sessions.delete_one({"user_id": user_id})
@@ -123,6 +123,7 @@ class Database:
             "sources": sources,
             "targets": targets,
             "keywords": keywords or [],
+            "filters": filters or {},
             "active": active,
             "created_at": datetime.utcnow()
         })

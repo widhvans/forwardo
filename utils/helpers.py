@@ -31,7 +31,10 @@ async def check_admin_status(client: Client, chat_id: int, user_id: int = None):
     except ChannelPrivate:
         return False, "Cannot access this chat. Make sure bot is a member!"
     except Exception as e:
-        return False, f"Error checking admin status: {str(e)}"
+        err = str(e)
+        if "CHANNEL_INVALID" in err:
+            return False, "❌ Chat info नहीं मिली. Please make Bot Admin first!"
+        return False, f"Error checking admin status: {err}"
 
 
 async def get_chat_info(client: Client, chat_id: int):
