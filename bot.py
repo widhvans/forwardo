@@ -36,12 +36,12 @@ from handlers.connect import (
 )
 from utils.logger import logger
 from handlers.forward import (
-    select_mode_callback, mode_instant_callback,
-    mode_forward_old_callback, start_instant_all_callback,
+    select_mode_callback, setup_filter_callback, 
+    toggle_filter_callback, confirm_filters_callback,
     stop_forwarding_callback, 
     status_callback, forward_message_handler, 
     load_sessions_on_startup, stop_command, active_sessions,
-    handle_keywords_input
+    handle_last_msg_input
 )
 from handlers.admin import stats_command, broadcast_command, users_command
 
@@ -215,10 +215,11 @@ async def text_message_handler(client: Client, message: Message):
         return
     
     if user_id in user_states:
-        state = user_states[user_id]
-        if state.get("action") == "set_keywords":
-            await handle_keywords_input(client, message)
-            return
+        # Check if waiting for last msg
+        if user_states[user_id].get("action") == "wait_for_last_msg":
+             # Should be handled by forwarded_handler if forwarded, 
+             # but if user sends text link/id, handle here later.
+             pass
 
 
 # ==================== Forwarded Message Handler ====================
@@ -313,16 +314,15 @@ async def callback_handler(client: Client, callback_query: CallbackQuery):
     # Mode handlers
     elif data == "select_mode":
         await select_mode_callback(client, callback_query)
-    elif data == "mode_instant":
-        await mode_instant_callback(client, callback_query)
-    elif data == "mode_forward_old":
-        await mode_forward_old_callback(client, callback_query)
         
-    # Start Handlers
-    elif data == "start_instant_all":
-        await start_instant_all_callback(client, callback_query)
-    elif data.startswith("start_final_instant_"): # If we need this pattern, but currently just start_instant_all or direct
-        pass 
+    # Filter Handlers
+    elif data.startswith("setup_filter_"):
+        await setup_filter_callback(client, callback_query)
+    elif data.startswith("toggle_"):
+        await toggle_filter_callback(client, callback_query)
+    elif data == "confirm_filters":
+        await confirm_filters_callback(client, callback_query)
+
     elif data == "stop_forwarding":
         await stop_forwarding_callback(client, callback_query)
     elif data == "status":
