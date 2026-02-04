@@ -32,7 +32,8 @@ from handlers.connect import (
     cancel_connect_callback, handle_forwarded_message,
     my_connections_callback, remove_source_callback,
     remove_target_callback, delete_connection_callback,
-    connect_in_chat, quick_connect_callback, user_states
+    connect_in_chat, quick_connect_callback, user_states,
+    remove_connection_callback
 )
 from utils.logger import logger
 from handlers.forward import (
@@ -291,6 +292,8 @@ async def callback_handler(client: Client, callback_query: CallbackQuery):
         await cancel_connect_callback(client, callback_query)
     elif data == "my_connections":
         await my_connections_callback(client, callback_query)
+    elif data == "remove_connection":
+        await remove_connection_callback(client, callback_query)
     elif data == "remove_source":
         await remove_source_callback(client, callback_query)
     elif data == "remove_target":

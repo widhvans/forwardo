@@ -508,100 +508,49 @@ def should_forward_message(message: Message, filters: dict) -> bool:
     return True
 
 async def forward_old_messages_loop(client, user_id, source_ids, target_ids, start_id):
-    logger.info(f"Starting loop User={user_id} StartMsg={start_id}")
+    logger.info(f"Starting loop User={user_id}")
     source_id = source_ids[0] # Priority to first source
     current_id = start_id
     total = 0
     filters = active_sessions[user_id]["filters"]
     
-    # Dynamic delay to prevent instant flood, but much faster than 1.5s
-    # Telegram limit is ~30 msgs/sec globally, but per chat it's lower.
-    # We'll start safe.
-    delay = 0.1 
-    
     try:
         while current_id > 0:
-            if user_id not in active_sessions: 
-                logger.info(f"Session stopped for User={user_id}")
-                return
-            
+            if user_id not in active_sessions: return
             try:
-                # Batch get messages could be faster but let's stick to simple logic first
                 msg = await client.get_messages(source_id, current_id)
-                
                 if msg and not msg.empty:
                     if should_forward_message(msg, filters):
-                        # Use gather for parallel forwarding to multiple targets
-                        tasks = []
                         for tid in target_ids:
-                             tasks.append(safe_copy_message(msg, tid))
-                             
-                        await asyncio.gather(*tasks)
-                        
+                            try: await msg.copy(tid)
+                            except FloodWait as e:
+                                await asyncio.sleep(e.value)
+                                await msg.copy(tid)
+                            except: pass
                         total += 1
                         if total % 20 == 0:
                              try: 
                                  await db.update_session_progress(user_id, current_id)
-                                 logger.info(f"User={user_id} Progress: MsgID={current_id} Total={total}")
+                                 # await client.send_message(user_id, f"📊 Forwarded: {total}...") # Optional: spammy
                              except: pass
-                             
-                # Small dynamic delay to be nice to API
-                await asyncio.sleep(delay)
-                
-            except FloodWait as e:
-                logger.warning(f"FloodWait: Sleeping {e.value}s (User={user_id})")
-                await asyncio.sleep(e.value + 1)
-            except Exception as e:
-                logger.error(f"Error in loop (User={user_id}, Msg={current_id}): {e}")
-                
+            except: pass
             current_id -= 1
-            
-    except Exception as e: 
-        logger.error(f"Critical Loop Error User={user_id}: {e}")
+            await asyncio.sleep(1.5)
+    except: pass
     finally:
          if user_id in active_sessions:
-             try:
-                 await client.send_message(user_id, f"✅ **Forwarding Completed!**\n\nProcessed {total} messages.")
-                 logger.info(f"Loop finished User={user_id} Total={total}")
-             except: pass
+             await client.send_message(user_id, "✅ Done!")
              await stop_forwarding_callback(None, None, user_id_override=user_id)
-
-async def safe_copy_message(msg, chat_id):
-    """Helper to copy message with individual FloodWait handling"""
-    try:
-        await msg.copy(chat_id)
-    except FloodWait as e:
-        await asyncio.sleep(e.value)
-        await msg.copy(chat_id)
-    except Exception as e:
-        # Some messages can't be copied (privacy, etc)
-        # logger.error(f"Copy failed to {chat_id}: {e}")
-        pass
 
 async def forward_message_handler(client, message):
     chat_id = message.chat.id
-    
-    # Parallel processing for multiple sessions/targets
-    tasks = []
-    
     for uid, session in active_sessions.items():
         if session["mode"] != "instant": continue
         if chat_id not in session["sources"]: continue
-        
         if should_forward_message(message, session["filters"]):
             for tid in session["targets"]:
-                tasks.append(safe_copy_message_instant(message, tid))
-                
-    if tasks:
-        await asyncio.gather(*tasks)
-
-async def safe_copy_message_instant(msg, chat_id):
-    try:
-        await msg.copy(chat_id)
-    except Exception as e:
-        # Silent fail for instant mode usually preferred to keep speed, 
-        # but could log if critical
-        pass
+                try: await message.copy(tid)
+                except: pass
 
 async def stop_forwarding_callback(client, callback_query, user_id_override=None):
     user_id = user_id_override or callback_query.from_user.id
