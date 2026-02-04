@@ -133,55 +133,52 @@ Total Connections: {len(unique_conns)}
 
 async def remove_connection_callback(client: Client, callback_query: CallbackQuery):
     """Show connections for removal"""
-    user_id = callback_query.from_user.id
-    
-    sources = await db.get_user_connections(user_id, "source")
-    targets = await db.get_user_connections(user_id, "target")
-    all_conns = sources + targets
-    
-    if not all_conns:
-        await callback_query.answer("No connections found!", show_alert=True)
-        return
-    
-    buttons = []
-    seen = set()
-    for conn in all_conns:
-        if conn["chat_id"] in seen: continue
-        seen.add(conn["chat_id"])
+    try:
+        user_id = callback_query.from_user.id
+        # logger.info(f"Removing connection for {user_id}") # Optional logging
         
-        # Use del_source generic or check type?
-        # Since we are unifying, we must know if it's source or target to delete specifically 
-        # OR delete BOTH if connected as both.
-        # DB remove_connection takes type.
-        # We should iterate and provide button to delete specific instance or all?
-        # User wants simple list.
-        # Check conn['connection_type'].
-        c_type = conn['connection_type']
+        sources = await db.get_user_connections(user_id, "source")
+        targets = await db.get_user_connections(user_id, "target")
+        all_conns = sources + targets
         
-        # If chat is connected as BOTH, we might have 2 entries in all_conns.
-        # My dedup logic above hides one.
-        # It's better to show specific deletions or "Disconnect Chat" which removes both?
-        # Let's show all entries without dedup for removal to be precise.
+        if not all_conns:
+            await callback_query.answer("No connections found!", show_alert=True)
+            return
         
-        c_name = conn['chat_title'][:20]
-        c_mark = "Source" if c_type == "source" else "Target" # Though user wanted unified view...
-        # Wait, user said "total connected chats... na ki source and target".
-        # This implies user doesn't care about type at this stage (DB structure forces it though).
-        # We can implement "Delete Any Connection related to ChatID".
+        buttons = []
+        seen = set()
         
-        buttons.append([
-            InlineKeyboardButton(
-                f"🗑 {c_name} ({c_type.title()})",
-                callback_data=f"del_any_{conn['chat_id']}_{c_type}" # Custom callback
-            )
-        ])
+        # Limit to avoid hitting button limits if user has many connections
+        MAX_BUTTONS = 50 
+        count = 0
         
-    buttons.append([InlineKeyboardButton("Back", callback_data="my_connections")])
-    
-    await callback_query.message.edit_text(
-        "🗑 **Remove Connection**\n\nSelect connection to remove:",
-        reply_markup=InlineKeyboardMarkup(buttons)
-    )
+        for conn in all_conns:
+            if conn["chat_id"] in seen: continue
+            if count >= MAX_BUTTONS: break
+            
+            seen.add(conn["chat_id"])
+            count += 1
+            
+            c_type = conn.get('connection_type', 'unknown')
+            c_name = conn.get('chat_title', 'Unknown')[:20]
+            
+            # Use unified callback
+            buttons.append([
+                InlineKeyboardButton(
+                    f"🗑 {c_name} ({c_type.title()})",
+                    callback_data=f"del_any_{conn['chat_id']}_{c_type}"
+                )
+            ])
+            
+        buttons.append([InlineKeyboardButton("Back", callback_data="my_connections")])
+        
+        await callback_query.message.edit_text(
+            "🗑 **Remove Connection**\n\nSelect connection to remove:",
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+    except Exception as e:
+        # logger.error(f"Error in remove_connection: {e}")
+        await callback_query.answer(f"Error: {str(e)}", show_alert=True)
 
 
 async def delete_connection_callback(client: Client, callback_query: CallbackQuery):
