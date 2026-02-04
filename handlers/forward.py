@@ -463,25 +463,22 @@ async def start_session_callback(client: Client, callback_query: CallbackQuery):
         sources=session["sources"],
         targets=session["targets"],
         filters=session["filters"],
-        active=True
+        active=True,
+        start_msg_id=s_msg_id
     )
     
     active_sessions[user_id] = session.copy()
     active_sessions[user_id]["active"] = True
-    session_data = active_sessions[user_id] # Ref
-    del temp_sessions[user_id]
+    active_sessions[user_id]["start_msg_id"] = s_msg_id
     
-    display_text = f"""
-✅ **Started: {session['mode'].replace('_', ' ').title()}**
-
-📤 Sources: {len(session['sources'])}
-📥 Targets: {len(session['targets'])}
-🛡 Filters: {len([k for k,v in session['filters'].items() if v])} active
-"""
-    await callback_query.message.edit_text(
-        display_text, 
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Stop", callback_data="stop_forwarding")]])
-    )
+    # Do NOT delete temp_sessions to preserve UI state (Sources/Targets selection)
+    # BUT update it to match active session status
+    temp_sessions[user_id] = active_sessions[user_id].copy()
+    
+    # Refresh the Hub UI which will now show "Running" and "Stop" button
+    await setup_hub_callback(client, callback_query)
+    
+    await callback_query.answer("✅ Forwarding Started!", show_alert=False)
     
     if session["mode"] == "forward_old" and s_msg_id:
         # Start only ONE task for simplicity (first source) ?
@@ -532,7 +529,9 @@ async def forward_old_messages_loop(client, user_id, source_ids, target_ids, sta
                             except: pass
                         total += 1
                         if total % 20 == 0:
-                             try: await client.send_message(user_id, f"📊 Forwarded: {total}...")
+                             try: 
+                                 await db.update_session_progress(user_id, current_id)
+                                 # await client.send_message(user_id, f"📊 Forwarded: {total}...") # Optional: spammy
                              except: pass
             except: pass
             current_id -= 1
@@ -557,10 +556,9 @@ async def stop_forwarding_callback(client, callback_query, user_id_override=None
     user_id = user_id_override or callback_query.from_user.id
     await db.stop_session(user_id)
     if user_id in active_sessions:
-        if user_id not in temp_sessions:
-             temp_sessions[user_id] = active_sessions[user_id].copy()
-        else:
-             temp_sessions[user_id] = active_sessions[user_id].copy()
+        # Update temp session so UI reflects "stopped" state if user acts on it (toggle filters, etc.)
+        # We want to keep the configuration for easy restart
+        temp_sessions[user_id] = active_sessions[user_id].copy()
         del active_sessions[user_id]
 
     if user_id in forward_tasks:
@@ -569,15 +567,80 @@ async def stop_forwarding_callback(client, callback_query, user_id_override=None
     
     if callback_query:
         await callback_query.answer("⏹ Stopped!", show_alert=True)
+        # Use setup_hub to show configuration again (Stop -> Start button)
         await setup_hub_callback(client, callback_query)
 
 # Exports/Placeholders
 async def stop_command(c, m): await stop_forwarding_callback(c, None, m.from_user.id)
 async def status_callback(c, cb): await cb.answer("Active" if cb.from_user.id in active_sessions else "Inactive")
+
+async def resume_session_callback(client: Client, callback_query: CallbackQuery):
+    """Resume a crashed session"""
+    user_id = callback_query.from_user.id
+    if user_id in active_sessions:
+        # Already active? Just show hub.
+        await setup_hub_callback(client, callback_query)
+        return
+        
+    session = await db.get_session(user_id)
+    if not session:
+        await callback_query.answer("❌ No session to resume!", show_alert=True)
+        return
+        
+    # Restore to temp_sessions
+    temp_sessions[user_id] = session
+    
+    # Just show Hub, user can click "Start" (which now says Start/Resume effectively)
+    # User asked: "continue again ka button ke saaath to bot whi se continue kr dena"
+    # So we should auto-start?
+    # "bot whi se continue kr dena ... old msg forward option se"
+    # Yes, auto-start.
+    
+    # We need to manually trigger start logic
+    # Reuse start_session_callback logic but without callback object if needed?
+    # No, we have callback_query here from the "Continue" button.
+    
+    await start_session_callback(client, callback_query)
+
 async def load_sessions_on_startup():
     global active_sessions
-    for s in await db.get_all_active_sessions(): active_sessions[s["user_id"]] = s
+    from bot import app # Direct import to send messages
     
+    sessions = await db.get_all_active_sessions()
+    for s in sessions:
+        user_id = s["user_id"]
+        
+        # If it's Forward Old Messages, we treat it as "Crashed" if it was active.
+        # Instant Forward can auto-resume implicitly by just adding to active_sessions?
+        # Yes, Instant Forward just needs to be in active_sessions memory.
+        
+        if s["mode"] == "forward_old":
+            # It was running when bot stopped.
+            # We do NOT add to active_sessions immediately to avoid auto-spamming or loop issues without user control.
+            # Instead, we notify user.
+            
+            # Mark incorrect in DB? No, keep it active in DB so we know it was active.
+            # But we are NOT adding it to `active_sessions` dict, so it won't actually run yet.
+            
+            try:
+                # Notify User
+                keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("▶️ Continue Forwarding", callback_data="resume_session")],
+                    [InlineKeyboardButton("❌ Stop", callback_data="stop_forwarding")] 
+                ])
+                
+                await app.send_message(
+                    user_id,
+                    "⚠️ **Bot Restarted Unconditionally!**\n\nYour forwarding session was interrupted. Do you want to continue from where it left off?",
+                    reply_markup=keyboard
+                )
+            except Exception as e:
+                logger.error(f"Failed to notify user {user_id}: {e}")
+                
+        else:
+            # Instant Mode: Just load it.
+            active_sessions[user_id] = s
+            
 async def setup_filter_callback(c, cb): pass 
 async def mode_instant_callback(c, cb): pass 
 async def confirm_filters_callback(c, cb): pass

@@ -109,7 +109,7 @@ class Database:
     # ==================== Session Operations ====================
     
     async def save_session(self, user_id: int, mode: str, sources: list, 
-                          targets: list, keywords: list = None, filters: dict = None, active: bool = True):
+                          targets: list, keywords: list = None, filters: dict = None, active: bool = True, start_msg_id: int = None):
         """
         Save forwarding session
         mode: 'instant' or 'forward_old'
@@ -117,7 +117,7 @@ class Database:
         # Delete existing session
         await self.sessions.delete_one({"user_id": user_id})
         
-        await self.sessions.insert_one({
+        doc = {
             "user_id": user_id,
             "mode": mode,
             "sources": sources,
@@ -126,7 +126,11 @@ class Database:
             "filters": filters or {},
             "active": active,
             "created_at": datetime.utcnow()
-        })
+        }
+        if start_msg_id:
+            doc["start_msg_id"] = start_msg_id
+            
+        await self.sessions.insert_one(doc)
 
     async def get_session(self, user_id: int):
         """Get user's active session"""
@@ -141,6 +145,13 @@ class Database:
         await self.sessions.update_one(
             {"user_id": user_id},
             {"$set": {"active": False}}
+        )
+        
+    async def update_session_progress(self, user_id: int, current_id: int):
+        """Update progress for forward_old session"""
+        await self.sessions.update_one(
+            {"user_id": user_id},
+            {"$set": {"start_msg_id": current_id}}
         )
 
     async def get_active_sessions_count(self):

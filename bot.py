@@ -43,7 +43,7 @@ from handlers.forward import (
     status_callback, forward_message_handler, 
     load_sessions_on_startup, stop_command,
     handle_last_msg_input, set_start_msg_hub_callback,
-    reset_selection_callback
+    reset_selection_callback, resume_session_callback
 )
 from handlers.admin import stats_command, broadcast_command, users_command
 
@@ -349,6 +349,9 @@ async def callback_handler(client: Client, callback_query: CallbackQuery):
         await stop_forwarding_callback(client, callback_query)
     elif data == "status":
         await status_callback(client, callback_query)
+        
+    elif data == "resume_session":
+        await resume_session_callback(client, callback_query)
 
 
 # ==================== Startup ====================
