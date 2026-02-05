@@ -298,10 +298,18 @@ async def callback_handler(client: Client, callback_query: CallbackQuery):
         await remove_source_callback(client, callback_query)
     elif data == "remove_target":
         await remove_target_callback(client, callback_query)
-    elif data.startswith("del_source_") or data.startswith("del_target_"):
+    elif data.startswith("del_source_") or data.startswith("del_target_") or data.startswith("del_any_"):
         await delete_connection_callback(client, callback_query)
     elif data.startswith("quick_source_") or data.startswith("quick_target_"):
         await quick_connect_callback(client, callback_query)
+    
+    # Connect Group/Channel separate flow
+    elif data == "connect_group_menu":
+        from handlers.start import connect_group_menu_callback
+        await connect_group_menu_callback(client, callback_query)
+    elif data == "connect_channel_menu":
+        from handlers.start import connect_channel_menu_callback
+        await connect_channel_menu_callback(client, callback_query)
     
     # Tile button callbacks
     elif data.startswith("tile_source_"):

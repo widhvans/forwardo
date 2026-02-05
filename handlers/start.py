@@ -52,19 +52,16 @@ async def start_command(client: Client, message: Message):
     keyboard = InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
-                "➕ Add to Group",
-                url=f"https://t.me/{BOT_USERNAME}?startgroup=true"
+                "🔗 Connect Group",
+                callback_data="connect_group_menu"
             ),
             InlineKeyboardButton(
-                "➕ Add to Channel",
-                url=f"https://t.me/{BOT_USERNAME}?startchannel=true"
+                "🔗 Connect Channel",
+                callback_data="connect_channel_menu"
             )
         ],
         [
             InlineKeyboardButton("⚙️ Auto Forward", callback_data="select_mode"),
-            InlineKeyboardButton("🔗 Connect Chat", callback_data="connect_chat")
-        ],
-        [
             InlineKeyboardButton("📋 My Connections", callback_data="my_connections")
         ]
     ])
@@ -90,21 +87,18 @@ async def start_callback(client: Client, callback_query):
         reply_markup=InlineKeyboardMarkup([
             [
                 InlineKeyboardButton(
-                    "➕ Add to Group",
-                    url=f"https://t.me/{BOT_USERNAME}?startgroup=true"
+                    "🔗 Connect Group",
+                    callback_data="connect_group_menu"
                 ),
                 InlineKeyboardButton(
-                    "➕ Add to Channel", 
-                    url=f"https://t.me/{BOT_USERNAME}?startchannel=true"
+                    "🔗 Connect Channel", 
+                    callback_data="connect_channel_menu"
                 )
             ],
-        [
-            InlineKeyboardButton("⚙️ Auto Forward", callback_data="select_mode"),
-            InlineKeyboardButton("🔗 Connect Chat", callback_data="connect_chat")
-        ],
-        [
-            InlineKeyboardButton("📋 My Connections", callback_data="my_connections")
-        ]
+            [
+                InlineKeyboardButton("⚙️ Auto Forward", callback_data="select_mode"),
+                InlineKeyboardButton("📋 My Connections", callback_data="my_connections")
+            ]
         ]),
         link_preview_options=LinkPreviewOptions(is_disabled=True)
     )
@@ -293,3 +287,103 @@ async def tile_target_callback(client, callback_query): pass
 async def cancel_tile_callback(client, callback_query): 
     await callback_query.message.reply_text("Cancelled", reply_markup=ReplyKeyboardRemove())
 async def handle_peer_selected(client, message): pass
+
+
+# Connect Group Menu - Shows native group picker
+async def connect_group_menu_callback(client: Client, callback_query):
+    """Show Connect Group with native picker tile"""
+    from config import BOT_USERNAME
+    
+    text = """
+🔗 **Connect Group**
+
+Click on the buttons below:
+
+**👥 Select Group** - Opens group picker
+
+⚠️ Bot MUST be admin in the group!
+"""
+    
+    # Using separate KeyboardButtonRequestChat class for GROUP only
+    keyboard = ReplyKeyboardMarkup(
+        [
+            [
+                KeyboardButton(
+                    text="👥 Select Group",
+                    request_chat=KeyboardButtonRequestChat(
+                        request_id=1,
+                        chat_is_channel=False,
+                        bot_is_member=True
+                    )
+                )
+            ],
+            [KeyboardButton("❌ Cancel")]
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+    
+    # Add inline button to add bot to group
+    inline_kb = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(
+                "➕ Add to Group",
+                url=f"https://t.me/{BOT_USERNAME}?startgroup=true"
+            )
+        ],
+        [InlineKeyboardButton("⬅️ Back", callback_data="start_menu")]
+    ])
+    
+    await callback_query.message.edit_text(text, reply_markup=inline_kb)
+    await callback_query.message.reply_text("👇 **Click below:**", reply_markup=keyboard)
+    await callback_query.answer()
+
+
+# Connect Channel Menu - Shows native channel picker
+async def connect_channel_menu_callback(client: Client, callback_query):
+    """Show Connect Channel with native picker tile"""
+    from config import BOT_USERNAME
+    
+    text = """
+🔗 **Connect Channel**
+
+Click on the buttons below:
+
+**📢 Select Channel** - Opens channel picker
+
+⚠️ Bot MUST be admin in the channel!
+"""
+    
+    # Using separate KeyboardButtonRequestChat class for CHANNEL only
+    keyboard = ReplyKeyboardMarkup(
+        [
+            [
+                KeyboardButton(
+                    text="📢 Select Channel",
+                    request_chat=KeyboardButtonRequestChat(
+                        request_id=2,
+                        chat_is_channel=True,
+                        bot_is_member=True
+                    )
+                )
+            ],
+            [KeyboardButton("❌ Cancel")]
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+    
+    # Add inline button to add bot to channel
+    inline_kb = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(
+                "➕ Add to Channel",
+                url=f"https://t.me/{BOT_USERNAME}?startchannel=true"
+            )
+        ],
+        [InlineKeyboardButton("⬅️ Back", callback_data="start_menu")]
+    ])
+    
+    await callback_query.message.edit_text(text, reply_markup=inline_kb)
+    await callback_query.message.reply_text("👇 **Click below:**", reply_markup=keyboard)
+    await callback_query.answer()
